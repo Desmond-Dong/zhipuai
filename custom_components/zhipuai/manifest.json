@@ -1,8 +1,8 @@
 {
   "domain": "zhipuai",
   "name": "智谱清言",
-  "codeowners": ["@knoop7"],
   "after_dependencies": ["assist_pipeline", "intent", "recorder"],
+  "codeowners": ["@knoop7"],
   "config_flow": true,
   "documentation": "https://github.com/knoop7/zhipuai",
   "integration_type": "service",
@@ -10,5 +10,4 @@
   "issue_tracker": "https://github.com/knoop7/zhipuai/issues",
   "requirements": [],
   "version": "2025.08.12"
-
 }
