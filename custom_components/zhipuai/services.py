@@ -170,7 +170,7 @@ class ImageProcessor:
         return ssim
 
 IMAGE_ANALYZER_SCHEMA = vol.Schema({
-    vol.Required("model", default="glm-4v-flash"): vol.In(["glm-4v-plus", "glm-4v", "glm-4v-flash"]),
+    vol.Required("model", default="glm-4.1v-thinking-flash"): vol.In(["glm-4v-plus", "glm-4v", "glm-4v-flash", "glm-4.1v-thinking-flash","glm-4.1v-thinking-flashX"]),
     vol.Required("message"): cv.string,
     vol.Optional("image_file"): cv.string,
     vol.Optional("image_entity"): cv.entity_id,
@@ -538,9 +538,80 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(DOMAIN, "video_analyzer", handle_video_analyzer, schema=VIDEO_ANALYZER_SCHEMA, supports_response=True)
 
+    # 添加 generate_data 服务
+    async def handle_generate_data(call: ServiceCall) -> dict:
+        """处理 generate_data 服务调用"""
+        try:
+            prompt = call.data.get("prompt", "")
+            if not prompt:
+                return {"success": False, "message": "提示词不能为空"}
+            
+            # 获取配置
+            config_entries = hass.config_entries.async_entries(DOMAIN)
+            if not config_entries:
+                return {"success": False, "message": "未找到智谱AI配置"}
+            
+            config_entry = config_entries[0]
+            api_key = config_entry.data.get(CONF_API_KEY)
+            if not api_key:
+                return {"success": False, "message": "未找到API密钥"}
+            
+            # 构建请求载荷
+            payload = {
+                "model": call.data.get("model", "glm-4"),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": call.data.get("temperature", 0.8),
+                "max_tokens": call.data.get("max_tokens", 1024),
+                "stream": call.data.get("stream", False)
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            }
+            
+            # 发送请求
+            response = await hass.async_add_executor_job(
+                lambda: requests.post(
+                    ZHIPUAI_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get("choices") and len(result["choices"]) > 0:
+                content = result["choices"][0].get("message", {}).get("content", "")
+                return {
+                    "success": True, 
+                    "message": content,
+                    "data": {
+                        "name": "智谱AI生成",
+                        "description": content,
+                        "category": "ai_generation"
+                    }
+                }
+            else:
+                return {"success": False, "message": "API 无响应"}
+                
+        except Exception as e:
+            LOGGER.error(f"generate_data 服务调用失败: {str(e)}")
+            return {"success": False, "message": f"生成失败: {str(e)}"}
+
+    # 注册 generate_data 服务
+    hass.services.async_register(DOMAIN, "generate_data", handle_generate_data, supports_response=True)
+
     @callback
     def async_unload_services() -> None:
         hass.services.async_remove(DOMAIN, "image_analyzer")
         hass.services.async_remove(DOMAIN, "video_analyzer")
+        hass.services.async_remove(DOMAIN, "generate_data")
 
     return async_unload_services

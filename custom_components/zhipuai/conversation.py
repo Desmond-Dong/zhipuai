@@ -71,6 +71,11 @@ from .prompts import (
     detect_keywords_in_text
 
 )
+from .optimizations import (
+    ParallelToolExecutor,
+    ContextCompressor,
+    SmartRetryHandler
+)
 
 
 class ChatCompletionMessageParam(TypedDict, total=False):
@@ -379,39 +384,31 @@ class ToolCallProcessor:
         return filtered_content
     
     async def _execute_tool_calls(self, tool_calls, user_text):
-        tasks = []
-        for call in tool_calls:
-            tasks.append(self._execute_single_call(call, user_text))
-        return await asyncio.gather(*tasks)
+        """执行工具调用 - 使用并行执行器优化"""
+        return await self.entity.parallel_executor.execute_parallel(tool_calls, user_text)
 
     async def _execute_single_call(self, tool_call, user_text):
-        tool_name = ""
+        """执行单个工具调用 - 使用智能重试处理器"""
+        tool_name = tool_call["function"].get("name", "")
         tool_call_id = f"{self.window_id}_{int(time.time())}"
         
-        try:
-            tool_name = tool_call["function"].get("name", "")
+        async def execute_call(tool_call, user_text):
             tool_args_json = tool_call["function"].get("arguments", "{}")
             tool_call_id = tool_call.get("id", tool_call_id)
-            
             
             LOGGER.debug("执行工具调用: %s, 参数: %s", tool_name, tool_args_json)
             
             tool_args = json.loads(tool_args_json) if tool_args_json else {"text": tool_args_json}
-            
-            
             tool_args["_window_id"] = self.window_id
-            
             
             tool_input = llm.ToolInput(id=tool_call_id, tool_name=tool_name, tool_args=tool_args)
             result = await self.entity._handle_tool_call(tool_input, user_text)
-            
             
             self.entity._last_tool_result = result
             
             result_content = json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else str(result)
             
             if not result.get("success", True):
-                
                 self.entity._last_error_message = result.get("message", result_content)
                 LOGGER.error("工具调用失败: %s, 错误: %s", tool_name, self.entity._last_error_message)
             
@@ -421,30 +418,15 @@ class ToolCallProcessor:
                 "tool_name": tool_name, 
                 "content": result_content
             }
-        except json.JSONDecodeError as e:
-            
-            original_error = str(e)
-            self.entity._last_error_message = original_error
-            LOGGER.error("参数格式错误: %s", original_error)
-            return {
-                "success": False, 
-                "tool_call_id": tool_call_id, 
-                "tool_name": tool_name, 
-                "content": json.dumps({"error": original_error}, ensure_ascii=False)
-            }
-        except Exception as e:
-            
-            original_error = str(e)
-            self.entity._last_error_message = original_error
-            LOGGER.error("执行错误: %s", original_error)
-            return {
-                "success": False, 
-                "tool_call_id": tool_call_id, 
-                "tool_name": tool_name, 
-                "content": json.dumps({"error": original_error}, ensure_ascii=False)
-            }
+        
+        return await self.entity.retry_handler.execute_with_retry(
+            tool_call, 
+            execute_call, 
+            user_text
+        )
 
     def _save_session_history(self, messages, filtered_content, conversation_id):
+        """保存会话历史 - 使用上下文压缩器优化"""
         filtered_history = []
         
         for msg in messages:
@@ -469,7 +451,9 @@ class ToolCallProcessor:
             else:
                 filtered_history.append({"role": "assistant", "content": filtered_content})
         
-        self.entity.session_histories[conversation_id] = filtered_history
+        # 使用上下文压缩器压缩历史
+        compressed_history = self.entity.context_compressor.compress_messages(filtered_history)
+        self.entity.session_histories[conversation_id] = compressed_history
 
     async def _get_ai_response(self, payload, chat_log, entity_id):
         payload["stream"] = True
@@ -580,15 +564,24 @@ class ZhipuAIConversationEntity(conversation.ConversationEntity, conversation.Ab
     _attr_name = None
     _attr_response = ""
 
-    def __init__(self, entry: ConfigEntry, hass: HomeAssistant) -> None:
+    def __init__(self, entry: ConfigEntry, subentry, hass: HomeAssistant) -> None:
         self.entry = entry
+        self.subentry = subentry
         self.hass = hass
         self.session_histories: dict[str, list[ChatCompletionMessageParam]] = {}
         self._current_session_id = None
-        self._attr_unique_id = entry.entry_id
+        
+        # 初始化优化器
+        self.parallel_executor = ParallelToolExecutor(self, max_parallel=5)
+        self.context_compressor = ContextCompressor(max_tokens=4000)
+        self.retry_handler = SmartRetryHandler(max_retries=3)
+        
+        # unique_id和identifiers归属于subentry
+        self._attr_unique_id = subentry.subentry_id
+        self._attr_entity_id = f"conversation.{DOMAIN}_{subentry.subentry_id}"
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
+            identifiers={(DOMAIN, subentry.subentry_id)},
+            name=subentry.title,
             manufacturer="北京智谱华章科技",
             model="ChatGLM AI",
             entry_type=dr.DeviceEntryType.SERVICE,
@@ -602,10 +595,31 @@ class ZhipuAIConversationEntity(conversation.ConversationEntity, conversation.Ab
         self.service_call_attempts = 0
         self._attr_native_value = "就绪"
         self._attr_extra_state_attributes = {"response": ""}
+        # availability / agent registration tracking
+        self._attr_available = True
+        self._agent_registered = False
 
     @property
     def supported_languages(self) -> list[str]:
         return list(dict.fromkeys(languages + ["zh-cn", "zh-tw", "zh-hk", "en"])) if (languages := get_languages()) and "zh" in languages else languages
+
+    @property
+    def available(self) -> bool:
+        """Return True if the conversation agent is available.
+
+        Keep entity available when the integration is set up even if optional
+        assist pipeline registration failed — we want the entity to be usable.
+        """
+        # If we have successfully registered our agent, mark available
+        if getattr(self, "_agent_registered", False):
+            return True
+
+        # If the parent config entry is present in hass.data, consider it available
+        entry = getattr(self, "entry", None)
+        if entry and self.hass and self.hass.data.get(DOMAIN) and entry.entry_id in self.hass.data.get(DOMAIN):
+            return True
+
+        return bool(getattr(self, "_attr_available", True))
 
     @property
     def state_attributes(self):
@@ -621,13 +635,45 @@ class ZhipuAIConversationEntity(conversation.ConversationEntity, conversation.Ab
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        assist_pipeline.async_migrate_engine(self.hass, "conversation", self.entry.entry_id, self.entity_id)
-        conversation.async_set_agent(self.hass, self.entry, self)
-        self.entry.async_on_unload(self.entry.add_update_listener(self._async_entry_update_listener))
+
+        # Guard calls that may not exist on all HA versions or may fail
+        try:
+            migrate = getattr(assist_pipeline, "async_migrate_engine", None)
+            if migrate:
+                result = migrate(self.hass, "conversation", self.entry.entry_id, self.entity_id)
+                if asyncio.iscoroutine(result):
+                    await result
+        except Exception as err:  # defensive: don't let migration failure make entity unavailable
+            LOGGER.debug("assist_pipeline.async_migrate_engine failed: %s", err)
+
+        try:
+            set_agent = conversation.async_set_agent
+            result = set_agent(self.hass, self.entry, self)
+            if asyncio.iscoroutine(result):
+                await result
+            self._agent_registered = True
+        except Exception as err:
+            LOGGER.exception("Failed to register conversation agent: %s", err)
+            self._agent_registered = False
+
+        # Reflect agent registration in availability so UI doesn't show 'unavailable'
+        self._attr_available = bool(self._agent_registered)
+        try:
+            self.async_write_ha_state()
+        except Exception:
+            pass
+
+        try:
+            self.entry.async_on_unload(self.entry.add_update_listener(self._async_entry_update_listener))
+        except Exception:
+            pass
 
     async def async_will_remove_from_hass(self) -> None:
         self.session_histories.clear()
-        conversation.async_unset_agent(self.hass, self.entry)
+        try:
+            conversation.async_unset_agent(self.hass, self.entry)
+        except Exception:
+            pass
         await super().async_will_remove_from_hass()
 
     async def async_process(self, user_input: conversation.ConversationInput) -> conversation.ConversationResult:
@@ -693,7 +739,7 @@ class ZhipuAIConversationEntity(conversation.ConversationEntity, conversation.Ab
                 options = self.entry.options
                 tools = None
                 user_name = None
-                llm_context = llm.LLMContext(platform=DOMAIN, context=user_input.context, user_prompt=user_input.text, 
+                llm_context = llm.LLMContext(platform=DOMAIN, context=user_input.context,
                     language=user_input.language, assistant=conversation.DOMAIN, device_id=user_input.device_id)
 
                 
@@ -1302,18 +1348,12 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    entity = ZhipuAIConversationEntity(config_entry, hass)
-    async_add_entities([entity])
-    hass.data.setdefault(DOMAIN, {})[config_entry.entry_id] = entity
+    # 遍历subentries，注册conversation类型实体
+    for subentry in getattr(config_entry, "subentries", {}).values():
+        if getattr(subentry, "subentry_type", None) == "conversation":
+            async_add_entities([ZhipuAIConversationEntity(config_entry, subentry, hass)], config_subentry_id=subentry.subentry_id)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, ["conversation"]):
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
-
-def _safe_json_log(data, default_msg="无法序列化的数据"):
-    try:
-        return json.dumps(data, ensure_ascii=False)
-    except (TypeError, ValueError):
-        return default_msg
-

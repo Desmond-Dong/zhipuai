@@ -40,61 +40,69 @@ def _handle_error_status(status: int, error_text: str) -> None:
 
 class StreamingRequestHandler:
     async def send_request(self, api_key: str, payload: Dict[str, Any], options: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
+        """简化的流式请求处理器 - 学习Go代码的SSE流处理方式"""
         payload["stream"] = True
         if "request_id" not in payload:
             payload["request_id"] = f"req_{int(time.time() * 1000)}"
         
         LOGGER.info("发送给AI的消息: %s", json.dumps(payload, ensure_ascii=False))
 
-        for attempt in range(3):
-            try:
-                session = await get_session()
-                headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-                timeout = aiohttp.ClientTimeout(total=options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT))
-                api_url = options.get("base_url", ZHIPUAI_URL)
-                
-                async with session.post(api_url, json=payload, headers=headers, timeout=timeout) as response:
-                    if response.status != 200:
-                        _handle_error_status(response.status, await response.text())
+        try:
+            session = await get_session()
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            timeout = aiohttp.ClientTimeout(total=options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT))
+            api_url = options.get("base_url", ZHIPUAI_URL)
+            
+            async with session.post(api_url, json=payload, headers=headers, timeout=timeout) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    _handle_error_status(response.status, error_text)
 
-                    buffer = ""
-                    async for chunk in response.content:
-                        if not chunk: 
-                            continue
-                            
-                        chunk_text = chunk.decode('utf-8')
-                        buffer += chunk_text
+                # 学习Go代码的SSE流处理方式
+                buffer = ""
+                async for chunk in response.content:
+                    if not chunk:
+                        continue
                         
-                        lines = buffer.split("\n")
-                        if len(lines) > 1:
-                            buffer = lines.pop()
-                            
-                            for line in lines:
-                                line = line.strip()
-                                if not line or line == "data: [DONE]":
+                    chunk_text = chunk.decode('utf-8', errors='ignore')
+                    buffer += chunk_text
+                    
+                    # 处理完整的行
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        
+                        # 跳过空行和结束标记
+                        if not line or line == "data: [DONE]":
+                            continue
+                        
+                        # 处理SSE数据行
+                        if line.startswith("data: "):
+                            data_str = line[6:]  # 移除 "data: " 前缀
+                            if data_str.strip():
+                                try:
+                                    data = json.loads(data_str)
+                                    yield data
+                                except json.JSONDecodeError:
+                                    LOGGER.debug("SSE数据解析失败: %s", data_str)
                                     continue
-                                    
-                                if line.startswith("data: "):
-                                    try:
-                                        yield json.loads(line[6:])
-                                    except:
-                                        pass
-                    
-                    if buffer.startswith("data: ") and "data: [DONE]" not in buffer:
+                
+                # 处理剩余的buffer
+                if buffer.strip() and buffer.startswith("data: "):
+                    data_str = buffer[6:].strip()
+                    if data_str and data_str != "[DONE]":
                         try:
-                            yield json.loads(buffer[6:])
-                        except:
-                            pass
+                            data = json.loads(data_str)
+                            yield data
+                        except json.JSONDecodeError:
+                            LOGGER.debug("剩余buffer解析失败: %s", data_str)
                     
-                    return
-                    
-            except (aiohttp.ClientConnectorError, aiohttp.ServerTimeoutError, aiohttp.ClientOSError, asyncio.TimeoutError):
-                if attempt < 2: 
-                    await asyncio.sleep(1.0)
-            except Exception as e:
-                raise HomeAssistantError(f"{ERROR_UNKNOWN}: {str(e)}")
-        
-        raise HomeAssistantError(f"{ERROR_UNKNOWN}")
+        except (aiohttp.ClientConnectorError, aiohttp.ServerTimeoutError, aiohttp.ClientOSError, asyncio.TimeoutError) as e:
+            LOGGER.error("网络请求错误: %s", str(e))
+            raise HomeAssistantError(f"{ERROR_UNKNOWN}: {str(e)}")
+        except Exception as e:
+            LOGGER.error("流式请求处理错误: %s", str(e))
+            raise HomeAssistantError(f"{ERROR_UNKNOWN}: {str(e)}")
 
     async def handle_tool_call(self, api_key: str, tool_call: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         for attempt in range(3):

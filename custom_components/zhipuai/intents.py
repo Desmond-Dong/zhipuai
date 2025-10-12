@@ -4,24 +4,15 @@ import os
 import yaml
 import asyncio
 from datetime import timedelta, datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 import voluptuous as vol
 from homeassistant.components import camera
 from homeassistant.components.conversation import DOMAIN as CONVERSATION_DOMAIN
-from homeassistant.components.lock import LockState
-from custom_components.zhipuai.api.musicapi import search_song, async_search_song, async_get_playlist_songs
+from custom_components.zhipuai.api.musicapi import  async_search_song, async_get_playlist_songs
 from homeassistant.components.timer import (
-    ATTR_DURATION,
-    ATTR_REMAINING,
-    CONF_DURATION,
-    CONF_ICON,
     DOMAIN as TIMER_DOMAIN,
-    SERVICE_CANCEL,
-    SERVICE_PAUSE,
-    SERVICE_START,
 )
-from homeassistant.const import ATTR_DEVICE_CLASS, ATTR_ENTITY_ID
-from homeassistant.core import Context, HomeAssistant, ServiceResponse, State
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import area_registry, device_registry, entity_registry, intent
 from .const import DOMAIN, LOGGER
 import json
@@ -106,7 +97,7 @@ class CameraAnalyzeIntent(intent.IntentHandler):
         LOGGER.info("Camera analyze intent info - 原始插槽: %s", slots)
         
         target_camera = next((e for e in intent_obj.hass.states.async_all(camera.DOMAIN) 
-            if camera_name.lower() in (e.name.lower(), e.entity_id.lower())), None)
+            if camera_name and isinstance(camera_name, str) and e and camera_name.lower() in (getattr(e, 'name', '').lower(), e.entity_id.lower())), None)
         response = intent.IntentResponse(intent=intent_obj, language="zh-cn")
         
         if self.config and "speech" in self.config:
@@ -140,16 +131,18 @@ class CameraAnalyzeIntent(intent.IntentHandler):
     def get_slot_value(self, slot_data):
         return None if not slot_data else slot_data.get('value') if isinstance(slot_data, dict) else getattr(slot_data, 'value', None) if hasattr(slot_data, 'value') else str(slot_data)
 
-
 class WebSearchIntent(intent.IntentHandler):
     intent_type = INTENT_WEB_SEARCH
-    slot_schema = {vol.Required("query"): str, vol.Optional("time_query"): str, vol.Optional("search_engine"): str}
+    slot_schema = {vol.Required("query"): str, vol.Optional("search_engine"): str}
 
     def __init__(self, hass: HomeAssistant):
         super().__init__()
         self.hass = hass
         self.config = {}
         self._config_loaded = False
+        self.simplified_engine_mapping = {"jc": "基础版", "gj": "高阶版", "kk": "夸克", "sg": "搜狗"}
+        self.search_engine_keywords = {"基础版": ["基础版", "jc"], "高阶版": ["高阶版", "gj"], "夸克": ["夸克搜索", "夸克", "kk"], "搜狗": ["搜狗搜索", "搜狗", "sg"]}
+        self.valid_engines = ["基础版", "高阶版", "夸克", "搜狗", "jc", "gj", "kk", "sg"]
 
     async def _load_config(self):
         if not self._config_loaded:
@@ -160,131 +153,144 @@ class WebSearchIntent(intent.IntentHandler):
 
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         await self._load_config()
-        slots = self.async_validate_slots(intent_obj.slots)
         
-        query = self.get_slot_value(slots.get("query", ""))
-        time_query = self.get_slot_value(slots.get("time_query"))
-        search_engine = self.get_slot_value(slots.get("search_engine"))
-        
-        LOGGER.info("Web search info - 原始插槽:%s", slots)
-        
-        simplified_engine_mapping = {"jc": "基础版", "gj": "高阶版", "kk": "夸克", "sg": "搜狗"}
-        search_engine = simplified_engine_mapping.get(search_engine, search_engine)
-        
-        search_engine_keywords = {
-            "基础版": ["基础版", "jc"], "高阶版": ["高阶版", "gj"],
-            "夸克": ["夸克搜索", "夸克", "kk"], "搜狗": ["搜狗搜索", "搜狗", "sg"]
-        }
-        
-        for engine, keywords in search_engine_keywords.items():
-            for keyword in keywords:
-                if query and not search_engine and keyword in query:
-                    query = query.replace(keyword, "").strip()
-                    search_engine = engine
-        
+        # 创建响应对象
         response = intent.IntentResponse(intent=intent_obj, language="zh-cn")
         
-        if not query:
-            return self._set_error_response(response, ERROR_NO_QUERY, "未提供搜索内容")
+        # 直接记录原始插槽数据，不做处理
+        LOGGER.info("Web search info - 原始插槽:%s", intent_obj.slots)
         
-        return await self._handle_web_search(
-            intent_obj.hass, intent_obj, query, time_query, search_engine
-        )
+        # 安全提取查询和搜索引擎参数
+        query = None
+        search_engine = None
+        
+        # 处理查询参数 (query)
+        if "query" in intent_obj.slots:
+            slot_data = intent_obj.slots["query"]
+            if isinstance(slot_data, dict) and "value" in slot_data:
+                query = slot_data["value"]
+            elif hasattr(slot_data, "value"):
+                query = slot_data.value
+            else:
+                query = str(slot_data)
+        
+        # 处理搜索引擎参数 (search_engine)
+        if "search_engine" in intent_obj.slots:
+            slot_data = intent_obj.slots["search_engine"]
+            if isinstance(slot_data, dict) and "value" in slot_data:
+                search_engine = slot_data["value"]
+            elif hasattr(slot_data, "value"):
+                search_engine = slot_data.value
+            else:
+                search_engine = str(slot_data)
+        
+        # 确保查询参数是字符串
+        query = str(query) if query is not None else ""
+        
+        # 处理搜索引擎简写映射
+        if search_engine:
+            search_engine = self.simplified_engine_mapping.get(search_engine, search_engine)
+        
+        # 从查询中提取搜索引擎信息
+        query, extracted_engine = self._extract_engine_from_query(query, search_engine)
+        if not search_engine and extracted_engine:
+            search_engine = extracted_engine
+        
+        # 确保查询非空
+        query = query.strip()
+        if not query:
+            return self._set_error_response(response, ERROR_NO_QUERY, "未提供有效的搜索内容")
+        
+        # 处理搜索请求
+        return await self._handle_web_search(intent_obj.hass, intent_obj, query, search_engine)
 
-    async def _handle_web_search(self, hass: HomeAssistant, intent_obj: intent.Intent, query: str, time_query: str = None, search_engine: str = None) -> intent.IntentResponse:
+    def _extract_engine_from_query(self, query, search_engine):
+        if not isinstance(query, str) or not query or search_engine: 
+            return query, search_engine
+        
+        for engine, keywords in self.search_engine_keywords.items():
+            for keyword in keywords:
+                if keyword in query:
+                    return re.sub(r'\b' + re.escape(keyword) + r'\b', '', query).strip(), engine
+        
+        return query, search_engine
+
+    async def _handle_web_search(self, hass: HomeAssistant, intent_obj: intent.Intent, query: str, search_engine: str = None) -> intent.IntentResponse:
         response = intent.IntentResponse(intent=intent_obj, language="zh-cn")
         
         try:
+            # 清理查询内容
+            query = re.sub(r'[<>$&;`|]', '', query.strip())
+            
+            if not query:
+                return self._set_error_response(response, ERROR_NO_QUERY, "搜索内容无效")
+            
+            # 构建服务数据
             service_data = {"query": query, "stream": False}
             
-            time_query_value = None
-            if isinstance(time_query, dict) and 'value' in time_query:
-                time_query_value = time_query['value']
-            elif hasattr(time_query, 'value'):
-                time_query_value = time_query.value
-            else:
-                time_query_value = time_query
-            
-            now = datetime.now()
-            
-            if time_query_value:
-                LOGGER.debug("处理时间查询: %s", time_query_value)
-                
-                if time_query_value in ["昨天", "昨日", "yesterday"]:
-                    target_date = now - timedelta(days=1)
-                elif time_query_value in ["前天"]:
-                    target_date = now - timedelta(days=2)
-                elif time_query_value in ["大前天"]:
-                    target_date = now - timedelta(days=3)
-                elif time_query_value in ["明天", "明日", "tomorrow"]:
-                    target_date = now + timedelta(days=1)
-                elif time_query_value in ["后天"]:
-                    target_date = now + timedelta(days=2)
-                elif time_query_value in ["大后天"]:
-                    target_date = now + timedelta(days=3)
-                elif time_query_value in ["今天", "今日", "today"]:
-                    target_date = now
-                elif time_query_value in ["本周", "这周", "this week"]:
-                    days_since_monday = now.weekday()
-                    target_date = now - timedelta(days=days_since_monday)
-                elif time_query_value in ["上周", "上个星期", "last week"]:
-                    days_since_monday = now.weekday()
-                    target_date = now - timedelta(days=days_since_monday + 7)
-                elif time_query_value in ["下周", "下个星期", "next week"]:
-                    days_since_monday = now.weekday()
-                    target_date = now + timedelta(days=7 - days_since_monday)
-                elif time_query_value in ["本月", "这个月", "this month"]:
-                    target_date = now.replace(day=1)
-                elif time_query_value in ["上个月", "上月", "last month"]:
-                    if now.month == 1:
-                        target_date = now.replace(year=now.year-1, month=12, day=1)
-                    else:
-                        target_date = now.replace(month=now.month-1, day=1)
-                elif time_query_value in ["下个月", "下月", "next month"]:
-                    if now.month == 12:
-                        target_date = now.replace(year=now.year+1, month=1, day=1)
-                    else:
-                        target_date = now.replace(month=now.month+1, day=1)
-                elif time_query_value in ["今年", "本年", "this year"]:
-                    target_date = now.replace(month=1, day=1)
-                elif time_query_value in ["去年", "上一年", "last year"]:
-                    target_date = now.replace(year=now.year-1, month=1, day=1)
-                elif time_query_value in ["明年", "下一年", "next year"]:
-                    target_date = now.replace(year=now.year+1, month=1, day=1)
-                else:
-                    target_date = now
-                    
-                service_data["time_query"] = target_date.strftime('%Y-%m-%d')
-                LOGGER.debug("时间查询转换为: %s", service_data["time_query"])
-            else:
-                service_data["time_query"] = now.strftime('%Y-%m-%d')
-            
-            if search_engine:
+            # 添加搜索引擎参数
+            if search_engine and isinstance(search_engine, str) and any(engine == search_engine or engine in search_engine for engine in self.valid_engines):
                 service_data["search_engine"] = search_engine
             
-            result = await hass.services.async_call(DOMAIN, "web_search", service_data, blocking=True, return_response=True)
+            # 调用搜索服务
+            try:
+                LOGGER.info("发起web搜索: %s", service_data)
+                result = await hass.services.async_call(
+                    DOMAIN, "web_search", service_data, 
+                    blocking=True, return_response=True
+                )
+                LOGGER.info("搜索结果: %s", result)
+            except Exception as service_error:
+                LOGGER.error("调用搜索服务时出错: %s", str(service_error))
+                return self._set_error_response(response, ERROR_SERVICE_CALL, f"搜索服务调用出错: {str(service_error)}")
             
-            if result and isinstance(result, dict) and result.get("success", False):
-                return self._set_speech_response(response, result.get("message", ""))
-            elif result and isinstance(result, dict):
-                return self._set_error_response(response, ERROR_SERVICE_CALL, result.get("message", "搜索服务调用失败"))
+            # 处理结果
+            if result and isinstance(result, dict):
+                if result.get("success", False):
+                    return self._set_speech_response(response, result.get("message", ""))
+                else:
+                    return self._set_error_response(
+                        response, ERROR_SERVICE_CALL, 
+                        result.get("message", "搜索服务调用失败")
+                    )
             else:
-                return self._set_error_response(response, ERROR_NO_RESPONSE, "未能获取到有效的搜索结果")
-            
+                return self._set_error_response(
+                    response, ERROR_NO_RESPONSE, 
+                    "未能获取到有效的搜索结果"
+                )
+                
         except Exception as e:
-            LOGGER.exception("搜索服务调用出错: %s", str(e))
-            return self._set_error_response(response, ERROR_SERVICE_CALL, f"搜索服务调用出错：{str(e)}")
+            LOGGER.exception("处理搜索请求时出错: %s", str(e))
+            return self._set_error_response(
+                response, ERROR_SERVICE_CALL, 
+                f"搜索服务调用出错：{str(e)}"
+            )
 
     def _set_error_response(self, response, code, message) -> intent.IntentResponse:
         response.async_set_error(code=code, message=message)
         return response
 
     def _set_speech_response(self, response, message) -> intent.IntentResponse:
-        response.async_set_speech(len(message.encode('utf-8')) > 24 * 1024 and message[:24 * 1024].rsplit(' ', 1)[0] + "..." or message)
+        if isinstance(message, str) and len(message.encode('utf-8')) > 24 * 1024:
+            message = message[:24 * 1024].rsplit(' ', 1)[0] + "..."
+        response.async_set_speech(message)
         return response
 
     def get_slot_value(self, slot_data):
-        return None if not slot_data else slot_data.get('value') if isinstance(slot_data, dict) else getattr(slot_data, 'value', None) if hasattr(slot_data, 'value') else str(slot_data)
+        """安全获取插槽值"""
+        if slot_data is None:
+            return None
+            
+        # 如果是字典，尝试获取value键
+        if isinstance(slot_data, dict):
+            return slot_data.get('value')
+            
+        # 如果是对象且有value属性
+        if hasattr(slot_data, 'value'):
+            return getattr(slot_data, 'value')
+            
+        # 如果是字符串或其他类型，直接返回
+        return slot_data
 
 class HassTimerIntent(intent.IntentHandler):
     intent_type = "HassTimerIntent"
@@ -383,105 +389,30 @@ class HassTimerIntent(intent.IntentHandler):
 class HassNotifyIntent(intent.IntentHandler):
     intent_type = "HassNotifyIntent"
     slot_schema = {vol.Required("message"): str}
-
     def __init__(self, hass: HomeAssistant):
         super().__init__()
         self.hass = hass
-
     async def async_handle(self, intent_obj: intent.Intent) -> intent.IntentResponse:
         response = intent.IntentResponse(intent=intent_obj, language="zh-cn")
-
         try:
             message = self.get_slot_value(intent_obj.slots.get("message"))
-            if not message:
-                response.async_set_error("no_message", "请提供要发送的通知内容")
-                return response
-
-            notify_service = "persistent_notification"  
-            for entry in self.hass.config_entries.async_entries(DOMAIN):
-                if "notify_service" in entry.options:
-                    notify_service = entry.options.get("notify_service")
-                    break
-
-            title_result = await self.hass.services.async_call(
-                "conversation", "process", 
-                {
-                    "agent_id": "conversation.zhi_pu_qing_yan",
-                    "language": "zh-cn",
-                    "text": f"请为这条消息生成一个简短的标题（不超过8个字）：{message}"
-                },
-                blocking=True,
-                return_response=True
-            )
-
+            if not message: return response.async_set_error("no_message", "请提供要发送的通知内容")
+            notify_service = next((entry.options.get("notify_service") for entry in self.hass.config_entries.async_entries(DOMAIN) if "notify_service" in entry.options), "persistent_notification")
+            title_result = await self.hass.services.async_call("conversation", "process", {"agent_id": "conversation.zhi_pu_qing_yan", "language": "zh-cn", "text": f"请为这条消息生成一个简短的标题（不超过8个字）：{message}"}, blocking=True, return_response=True)
             title = "新通知"
-            if title_result and isinstance(title_result, dict):
-                ai_title = title_result.get("response", {}).get("speech", {}).get("plain", {}).get("speech", "")
-                if ai_title:
-                    title = ai_title
-
-            result = await self.hass.services.async_call(
-                "conversation", "process", 
-                {
-                    "agent_id": "conversation.zhi_pu_qing_yan",
-                    "language": "zh-cn",
-                    "text": f"请将以下内容改写成一条通知消息，只需返回改写后的文本内容，不要添加也不需要执行动作工具任何代码或格式,注意要使用表情emoji：{message}"
-                },
-                blocking=True,
-                return_response=True
-            )
-
-            if not result or not isinstance(result, dict):
-                response.async_set_error("invalid_response", "AI 响应格式错误")
-                return response
-
-            ai_response = result.get("response", {})
-            ai_message = ai_response.get("speech", {}).get("plain", {}).get("speech", "")
-            if not ai_message:
-                ai_message = message
-
+            title = title_result and isinstance(title_result, dict) and title_result.get("response", {}).get("speech", {}).get("plain", {}).get("speech", "") or title
+            result = await self.hass.services.async_call("conversation", "process", {"agent_id": "conversation.zhi_pu_qing_yan", "language": "zh-cn", "text": f"请将以下内容改写成一条通知消息，只需返回改写后的文本内容，不要添加也不需要执行动作工具任何代码或格式,注意要使用表情emoji：{message}"}, blocking=True, return_response=True)
+            if not result or not isinstance(result, dict): return response.async_set_error("invalid_response", "AI 响应格式错误")
+            ai_message = result.get("response", {}).get("speech", {}).get("plain", {}).get("speech", "") or message
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            if notify_service != "persistent_notification":
-                await self.hass.services.async_call(
-                    "notify", 
-                    notify_service, 
-                    {
-                        "title": title,
-                        "message": f"{ai_message}"
-                    },
-                    blocking=True
-                )
-            else:
-                await self.hass.services.async_call(
-                    "persistent_notification", 
-                    "create", 
-                    {
-                        "title": title,
-                        "message": f"{ai_message}\n\n\n\n创建时间：{current_time}"
-                    },
-                    blocking=True
-                )
-            
+            await self.hass.services.async_call("notify" if notify_service != "persistent_notification" else "persistent_notification", notify_service if notify_service != "persistent_notification" else "create", {"title": title, "message": ai_message + ("" if notify_service != "persistent_notification" else f"\n\n\n\n创建时间：{current_time}")}, blocking=True)
             response.async_set_speech(f"已创建通知: {message}")
             return response
-
         except Exception as err:
             LOGGER.exception("发送通知失败: %s", str(err))
-            response.async_set_error("notification_error", f"发送通知失败: {str(err)}")
-            return response
-
+            return response.async_set_error("notification_error", f"发送通知失败: {str(err)}")
     def get_slot_value(self, slot_data):
-        if not slot_data:
-            return None
-        
-        if isinstance(slot_data, dict) and 'value' in slot_data:
-            return slot_data['value']
-        
-        if hasattr(slot_data, 'value'):
-            return getattr(slot_data, 'value')
-        
-        return slot_data
+        return None if not slot_data else slot_data.get('value') if isinstance(slot_data, dict) and 'value' in slot_data else getattr(slot_data, 'value') if hasattr(slot_data, 'value') else slot_data
 
 
 class ClimateBaseIntent(intent.IntentHandler):
@@ -824,7 +755,18 @@ class HassLightSetAllIntent(intent.IntentHandler):
             "橙": {"name": "orange", "rgb": [255, 165, 0]},
             "粉": {"name": "pink", "rgb": [255, 192, 203]},
             "棕": {"name": "brown", "rgb": [165, 42, 42]},
-            "灰": {"name": "gray", "rgb": [128, 128, 128]}
+            "灰": {"name": "gray", "rgb": [128, 128, 128]},
+            "红色": {"name": "red", "rgb": [255, 0, 0]},
+            "绿色": {"name": "green", "rgb": [0, 255, 0]},
+            "蓝色": {"name": "blue", "rgb": [0, 0, 255]},
+            "黄色": {"name": "yellow", "rgb": [255, 255, 0]},
+            "白色": {"name": "white", "rgb": [255, 255, 255]},
+            "黑色": {"name": "black", "rgb": [0, 0, 0]},
+            "紫色": {"name": "purple", "rgb": [128, 0, 128]},
+            "橙色": {"name": "orange", "rgb": [255, 165, 0]},
+            "粉色": {"name": "pink", "rgb": [255, 192, 203]},
+            "棕色": {"name": "brown", "rgb": [165, 42, 42]},
+            "灰色": {"name": "gray", "rgb": [128, 128, 128]}
         }
         self.color_temp_map = {
             "暖": 2600, "暖白": 2600, "暖黄": 2600, "暖光": 2600,
@@ -846,11 +788,7 @@ class HassLightSetAllIntent(intent.IntentHandler):
             "color": color, "brightness": brightness, "color_temp": color_temp
         })
 
-        entity_id = next(
-            (state.entity_id for state in self.hass.states.async_all(domain)
-             if name and name.lower() in state.name.lower()),
-            None
-        )
+        entity_id = next((state.entity_id for state in self.hass.states.async_all(domain) if name and isinstance(name, str) and name.lower() in state.name.lower()), None)
 
         response = intent.IntentResponse(intent=intent_obj, language="zh-cn")
         
@@ -858,14 +796,9 @@ class HassLightSetAllIntent(intent.IntentHandler):
             response.async_set_error("no_valid_targets", f"未找到名为{name}的{domain}实体")
             return response
 
-        if action and any(term in action.lower() for term in ["关", "关闭", "off", "turn off"]):
+        if action and isinstance(action, str) and any(term in action.lower() for term in ["关", "关闭", "off", "turn off"]):
             try:
-                await self.hass.services.async_call(
-                    domain, "turn_off",
-                    {"entity_id": entity_id},
-                    blocking=True,
-                    context=intent_obj.context
-                )
+                await self.hass.services.async_call(domain, "turn_off", {"entity_id": entity_id}, blocking=True, context=intent_obj.context)
                 response.async_set_speech(f"已关闭{name}")
                 return response
             except Exception as err:
@@ -874,12 +807,7 @@ class HassLightSetAllIntent(intent.IntentHandler):
 
         if domain != "light":
             try:
-                await self.hass.services.async_call(
-                    domain, "turn_on",
-                    {"entity_id": entity_id},
-                    blocking=True,
-                    context=intent_obj.context
-                )
+                await self.hass.services.async_call(domain, "turn_on", {"entity_id": entity_id}, blocking=True, context=intent_obj.context)
                 response.async_set_speech(f"已打开{name}")
                 return response
             except Exception as err:
@@ -890,81 +818,85 @@ class HassLightSetAllIntent(intent.IntentHandler):
         message_parts = []
         has_settings = False
 
-        if color:
+        if color and isinstance(color, str):
+            color_lower = color.lower()
+            color_rgb = None
             for cn_color, color_info in self.color_map.items():
                 if cn_color in color:
-                    service_data["rgb_color"] = color_info["rgb"]
-                    message_parts.append(f"颜色设为{color}")
-                    has_settings = True
+                    color_rgb = color_info["rgb"]
+                    color_name = color_info["name"]
                     break
+            
+            if color_rgb:
+                service_data["rgb_color"] = color_rgb
+                message_parts.append(f"颜色设为{color}")
+                has_settings = True
 
         if brightness is not None:
-            try:
-                value = None
-                if isinstance(brightness, str):
-                    if "%" in brightness:
-                        value = int(brightness.replace("%", "").strip())
-                    else:
-                        match = re.search(r"(\d+)", brightness)
-                        if match:
-                            value = int(match.group(1))
-                elif isinstance(brightness, (int, float)):
-                    value = int(brightness)
+            value = self._parse_brightness(brightness)
+            if value is not None:
+                service_data["brightness"] = int(max(0, min(100, value)) * 255 / 100)
+                message_parts.append(f"亮度设为{value}%")
+                has_settings = True
 
-                if value is not None:
-                    service_data["brightness"] = int(max(0, min(100, value)) * 255 / 100)
-                    message_parts.append(f"亮度设为{value}%")
-                    has_settings = True
-            except (ValueError, AttributeError, TypeError):
-                pass
-
-        if color_temp:
+        if color_temp and isinstance(color_temp, str):
+            temp_value = None
             for keyword, value in self.color_temp_map.items():
                 if keyword in color_temp:
-                    service_data["color_temp_kelvin"] = value
-                    message_parts.append(f"色温设为{color_temp}")
-                    has_settings = True
+                    temp_value = value
                     break
-            else:
-                self._try_parse_color_temp(color_temp, service_data, message_parts)
+            
+            if temp_value:
+                service_data["color_temp_kelvin"] = temp_value
+                message_parts.append(f"色温设为{color_temp}")
                 has_settings = True
+            else:
+                temp_value = self._parse_color_temp(color_temp)
+                if temp_value:
+                    service_data["color_temp_kelvin"] = temp_value
+                    message_parts.append(f"色温设为{temp_value}K")
+                    has_settings = True
 
         if not has_settings and not action:
             message_parts.append("已打开")
 
         try:
+            # 先确保灯是开启的
             if has_settings:
-                await self.hass.services.async_call(
-                    "light", "turn_on",
-                    {"entity_id": entity_id},
-                    blocking=True,
-                    context=intent_obj.context
-                )
+                await self.hass.services.async_call("light", "turn_on", {"entity_id": entity_id}, blocking=True, context=intent_obj.context)
 
-
+            # 再应用具体的设置
             if service_data:
-                await self.hass.services.async_call(
-                    "light", "turn_on",
-                    service_data,
-                    blocking=True,
-                    context=intent_obj.context
-                )
+                await self.hass.services.async_call("light", "turn_on", service_data, blocking=True, context=intent_obj.context)
 
-            response.async_set_speech(f"{name}的灯" + "，".join(message_parts))
+            response.async_set_speech(f"{name}的灯，" + "，".join(message_parts))
             return response
         except Exception as err:
             response.async_set_error("failed_to_handle", f"设置失败: {err}")
             return response
 
-    def _try_parse_color_temp(self, color_temp, service_data, message_parts):
+    def _parse_brightness(self, brightness):
+        try:
+            if isinstance(brightness, (int, float)):
+                return int(brightness)
+            if isinstance(brightness, str):
+                if "%" in brightness:
+                    return int(brightness.replace("%", "").strip())
+                match = re.search(r"(\d+)", brightness)
+                if match:
+                    return int(match.group(1))
+            return None
+        except (ValueError, AttributeError, TypeError):
+            return None
+
+    def _parse_color_temp(self, color_temp):
         try:
             match = re.search(r"(\d+)", color_temp)
             if match:
-                value = max(2000, min(6500, int(match.group(1))))
-                service_data["color_temp_kelvin"] = value
-                message_parts.append(f"色温设为{value}K")
+                return max(2000, min(6500, int(match.group(1))))
+            return None
         except (ValueError, AttributeError):
-            pass
+            return None
 
     def get_slot_value(self, slot_data):
         if not slot_data:
@@ -1159,7 +1091,7 @@ class MassPlayMediaAssist(intent.IntentHandler):
                 song_cover = song_info.get("cover", "")
                 song_duration = song_info.get("duration", 0)  
                 
-                encoded_url = f"{result['url']}#INFO#%{urllib.parse.quote(song_title)}#%{urllib.parse.quote(song_artist)}#%{urllib.parse.quote(song_album)}#%{urllib.parse.quote(song_cover)}#{song_duration}#/{song_title}-{song_artist}"
+                encoded_url = f"{result['url']}#INFO#%{urllib.parse.quote(str(song_title))}#%{urllib.parse.quote(str(song_artist))}#%{urllib.parse.quote(str(song_album))}#%{urllib.parse.quote(str(song_cover)) if song_cover else ''}#{song_duration}#/{song_title}-{song_artist}"
                 
                 LOGGER.info(f"歌曲元数据: 标题={song_title}, 歌手={song_artist}, 专辑={song_album}, 封面={song_cover}, 持续时间={song_duration}秒")
                 
@@ -1226,7 +1158,7 @@ class MassPlayMediaAssist(intent.IntentHandler):
             song_cover = song_info.get("cover", first_song['cover'])
             song_duration = song_info.get("duration", 0)  
             
-            encoded_url = f"{song_result['url']}#INFO#%{urllib.parse.quote(song_title)}#%{urllib.parse.quote(song_artist)}#%{urllib.parse.quote(song_album)}#%{urllib.parse.quote(song_cover)}#{song_duration}#PLAYLIST#{playlist_id}"
+            encoded_url = f"{song_result['url']}#INFO#%{urllib.parse.quote(str(song_title))}#%{urllib.parse.quote(str(song_artist))}#%{urllib.parse.quote(str(song_album))}#%{urllib.parse.quote(str(song_cover)) if song_cover else ''}#{song_duration}#PLAYLIST#{playlist_id}"
             
             self._register_playlist_listener()
             
@@ -1301,7 +1233,7 @@ class MassPlayMediaAssist(intent.IntentHandler):
         song_cover = song_info.get("cover", next_song['cover'])
         song_duration = song_info.get("duration", 0)  
         
-        encoded_url = f"{song_result['url']}#INFO#%{urllib.parse.quote(song_title)}#%{urllib.parse.quote(song_artist)}#%{urllib.parse.quote(song_album)}#%{urllib.parse.quote(song_cover)}#{song_duration}#PLAYLIST#{playlist_info['playlist_id']}"
+        encoded_url = f"{song_result['url']}#INFO#%{urllib.parse.quote(str(song_title))}#%{urllib.parse.quote(str(song_artist))}#%{urllib.parse.quote(str(song_album))}#%{urllib.parse.quote(str(song_cover)) if song_cover else ''}#{song_duration}#PLAYLIST#{playlist_info['playlist_id']}"
         
         await self.hass.services.async_call(
             "media_player", "play_media",
