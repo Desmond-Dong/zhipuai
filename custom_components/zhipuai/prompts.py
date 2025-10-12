@@ -53,36 +53,12 @@ LIGHT_CONTROL = {
 
 WEB_SEARCH = {
     "prompt": """
-
-使用ZhipuAIWebSearch进行网络搜索
-基本搜索: ZhipuAIWebSearch(query='上海天气')
-指定时间搜索: ZhipuAIWebSearch(query='新闻热点', time_query='今天')
-指定搜索引擎: ZhipuAIWebSearch(query='人工智能发展', search_engine='gj')
-完整搜索: ZhipuAIWebSearch(query='天气预报', time_query='明天', search_engine='kq')
-
 参数说明:
 - query: 搜索内容(必填)
-- time_query: 时间约束，如'今天'/'昨天'/'明天'，自动转换为YYYY-MM-DD格式
 - search_engine: 搜索引擎，'jc'(基础版)/'gj'(高阶版)/'kq'(夸克)/'sg'(搜狗)
 """,
     "keywords": ["搜索", "查询", "search", "联网", "互联网", "上网", "百度", "谷歌", "必应", "夸克", "搜狗"],
-    "tools": ["ZhipuAIWebSearch"],
-    "tool_definition": {
-        "type": "function",
-        "function": {
-            "name": "ZhipuAIWebSearch",
-            "description": "Search web information with time constraints and engine selection",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "搜索内容，例如：'上海天气'"},
-                    "time_query": {"type": "string", "description": "时间约束，使用'今天','昨天','明天'等值，系统会自动转换为YYYY-MM-DD格式"},
-                    "search_engine": {"type": "string", "description": "搜索引擎选择: 'jc'(基础版,默认),'gj'(高阶版),'kq'(夸克),'sg'(搜狗)"}
-                },
-                "required": ["query"]
-            }
-        }
-    }
+
 }
 
 CLIMATE_CONTROL = {

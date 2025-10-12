@@ -13,8 +13,6 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
-    LOGGER,
-    ZHIPUAI_WEB_SEARCH_URL,
     CONF_WEB_SEARCH,
     DEFAULT_WEB_SEARCH
 )

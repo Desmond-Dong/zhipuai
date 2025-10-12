@@ -12,7 +12,7 @@ from .image_gen import async_setup_image_gen
 from .entity_analysis import async_setup_entity_analysis
 from .process_with_ha import async_setup as async_setup_process_with_ha
 
-PLATFORMS: list[Platform] = [Platform.CONVERSATION]
+PLATFORMS: list[Platform] = [Platform.CONVERSATION, Platform.AI_TASK]
 
 class ZhipuAIConfigEntry:
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
@@ -58,17 +58,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         zhipuai_entry = ZhipuAIConfigEntry(hass, entry)
         await zhipuai_entry.async_setup()
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = zhipuai_entry
-        
+
+        # conversation 平台实体通过平台 setup_entry 注册
+
         unload_services = await async_setup_services(hass)
         zhipuai_entry.async_on_unload(unload_services)
-        
+
         await async_setup_intents(hass)
-        
         await async_setup_web_search(hass)
         await async_setup_image_gen(hass)
         await async_setup_entity_analysis(hass)
         await async_setup_process_with_ha(hass)
- 
+
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         return True
         

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any
+from typing import Any, Mapping
 from types import MappingProxyType
 import voluptuous as vol
 import aiohttp
@@ -9,6 +9,8 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
 )
 from homeassistant import exceptions
 from homeassistant.const import CONF_API_KEY, CONF_NAME, CONF_LLM_HASS_API
@@ -27,6 +29,8 @@ from .const import (
     CONF_PROMPT,
     CONF_TEMPERATURE,
     DEFAULT_NAME,
+    DEFAULT_CONVERSATION_NAME,
+    DEFAULT_AI_TASK_NAME,
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
     CONF_RECOMMENDED,
@@ -67,27 +71,31 @@ from .const import (
 
 
 ZHIPUAI_MODELS = [
+    "GLM-4.5",
+    "GLM-4.5-X",
+    "GLM-4.5-Air",
+    "GLM-4.5-AirX",
     "GLM-4-Plus",
     "GLM-4-0520",
     "GLM-4-Long",
     "glm-zero-preview",
     "GLM-Z1-Air",
     "GLM-Z1-AirX",
-    "GLM-Z1-flash",
-    "GLM-Z1-flashX-250414",
+    "GLM-Z1-Flash",
+    "GLM-Z1-FlashX",
+    "GLM-4.5-Flash",
     "GLM-4-Flash",
-    "glm-4-flash-250414",
-    "glm-4-flashx-250414",
-    "CharGLM-4",
+    "GLM-4-flash-250414",
     "GLM-4-Air",
     "GLM-4-AirX",
     "GLM-4-Air-250414",
     "GLM-4-AllTools",
     "GLM-4-Assistant",
+    "CharGLM-4",
     "GLM-4-CodeGeex-4"
 ]
 
-RECOMMENDED_CHAT_MODEL = "glm-4-flash"
+RECOMMENDED_CHAT_MODEL = "glm-4.5-flash"
 
 RECOMMENDED_OPTIONS = {
     CONF_RECOMMENDED: True,
@@ -119,7 +127,20 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=user_input[CONF_NAME],
                     data=user_input,
-                    options=RECOMMENDED_OPTIONS,
+                    subentries=[
+                        {
+                            "subentry_type": "conversation",
+                            "data": RECOMMENDED_OPTIONS,
+                            "title": DEFAULT_CONVERSATION_NAME,
+                            "unique_id": None,
+                        },
+                        {
+                            "subentry_type": "ai_task_data",
+                            "data": RECOMMENDED_OPTIONS,
+                            "title": DEFAULT_AI_TASK_NAME,
+                            "unique_id": None,
+                        },
+                    ],
                 )
             except UnauthorizedError:
                 errors["base"] = "invalid_auth"
@@ -238,6 +259,17 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> ZhipuAIOptionsFlow:
         return ZhipuAIOptionsFlow(config_entry)
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return subentries supported by this integration."""
+        return {
+            "conversation": ZhipuAISubentryFlowHandler,
+            "ai_task_data": ZhipuAISubentryFlowHandler,
+        }
 
 
 class ZhipuAIOptionsFlow(OptionsFlow):
@@ -526,3 +558,117 @@ class InvalidAPIKey(exceptions.HomeAssistantError):
 
 class ModelNotFound(exceptions.HomeAssistantError):
     pass
+
+
+class ZhipuAISubentryFlowHandler(ConfigSubentryFlow):
+    """Flow for managing conversation subentries."""
+
+    @property
+    def _is_new(self) -> bool:
+        """Return if this is a new subentry."""
+        return self.source == "user"
+
+    async def async_step_set_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Set conversation options."""
+        errors: dict[str, str] = {}
+
+        if user_input is None:
+            if self._is_new:
+                options: dict[str, Any]
+                if self._subentry_type == "ai_task_data":
+                    options = RECOMMENDED_OPTIONS.copy()
+                else:
+                    options = RECOMMENDED_OPTIONS.copy()
+            else:
+                # If this is a reconfiguration, we need to copy the existing options
+                # so that we can show the current values in the form.
+                options = self._get_reconfigure_subentry().data.copy()
+        else:
+            if user_input.get(CONF_HISTORY_ANALYSIS):
+                return await self.async_step_history(user_input)
+
+            if self._is_new:
+                return self.async_create_entry(
+                    title=user_input.pop(CONF_NAME, DEFAULT_AI_TASK_NAME if self._subentry_type == "ai_task_data" else DEFAULT_CONVERSATION_NAME),
+                    data=user_input,
+                )
+
+            return self.async_update_and_abort(
+                self._get_entry(),
+                self._get_reconfigure_subentry(),
+                data=user_input,
+            )
+
+        schema = vol.Schema(zhipuai_config_option_schema(self.hass, options))
+        return self.async_show_form(
+            step_id="set_options", data_schema=schema, errors=errors
+        )
+
+    async def async_step_history(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle history step."""
+        errors: dict[str, str] = {}
+        current_options = self._get_reconfigure_subentry().data if not self._is_new else {}
+
+        if user_input is not None:
+            try:
+                days = user_input.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
+                if days < 1 or days > MAX_HISTORY_DAYS:
+                    errors[CONF_HISTORY_DAYS] = "invalid_days"
+                if not user_input.get(CONF_HISTORY_ENTITIES):
+                    errors[CONF_HISTORY_ENTITIES] = "no_entities"
+
+                if not errors:
+                    if self._is_new:
+                        return self.async_create_entry(
+                            title=user_input.pop(CONF_NAME, "Zhipu AI Task"),
+                            data=user_input,
+                        )
+
+                    return self.async_update_and_abort(
+                        self._get_entry(),
+                        self._get_reconfigure_subentry(),
+                        data=user_input,
+                    )
+            except ValueError:
+                errors["base"] = "invalid_option"
+
+        entities = {}
+        for entity in self.hass.states.async_all():
+            friendly_name = entity.attributes.get("friendly_name", entity.entity_id)
+            entities[entity.entity_id] = f"{friendly_name} ({entity.entity_id})"
+
+        return self.async_show_form(
+            step_id="history",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_HISTORY_ENTITIES,
+                    default=current_options.get(CONF_HISTORY_ENTITIES, [])
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[{"value": k, "label": v} for k, v in entities.items()],
+                        multiple=True,
+                        mode="dropdown",
+                        custom_value=False,
+                    )
+                ),
+                vol.Optional(
+                    CONF_HISTORY_INTERVAL,
+                    default=current_options.get(CONF_HISTORY_INTERVAL, DEFAULT_HISTORY_INTERVAL),
+                ): vol.Coerce(int),
+                vol.Required(
+                    CONF_HISTORY_DAYS,
+                    default=current_options.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=1, max=MAX_HISTORY_DAYS),
+                ),
+            }),
+            errors=errors,
+        )
+
+    async_step_reconfigure = async_step_set_options
+    async_step_user = async_step_set_options

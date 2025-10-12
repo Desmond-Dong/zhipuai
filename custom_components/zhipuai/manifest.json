@@ -9,6 +9,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/knoop7/zhipuai/issues",
   "requirements": [],
-  "version": "2025.05.11",
+  "version": "2025.08.12",
   "translations": ["en", "zh-Hans"]
 }
