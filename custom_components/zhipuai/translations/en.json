@@ -172,7 +172,6 @@
     },
     "stop_sequences": {
       "options": {
-        "\\n": "Line break (\\n)",
         "。": "Period (。)",
         "！": "Exclamation mark (！)",
         "？": "Question mark (？)",
