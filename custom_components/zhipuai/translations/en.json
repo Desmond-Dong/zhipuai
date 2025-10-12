@@ -139,24 +139,24 @@
   "selector": {
     "model_descriptions": {
       "options": {
-        "GLM-4-Plus": "GLM-4-Plus - High-Smart Flagship, 128K/4K, 5 yuan/million tokens",
-        "GLM-4-0520": "GLM-4-0520 - High-Smart Flagship, 128K/4K, 5 yuan/million tokens",
-        "GLM-4-Long": "GLM-4-Long - Long Context, 1M/4K, 5 yuan/million tokens",
+        "glm-4-plus": "GLM-4-Plus - High-Smart Flagship, 128K/4K, 5 yuan/million tokens",
+        "glm-4-0520": "GLM-4-0520 - High-Smart Flagship, 128K/4K, 5 yuan/million tokens",
+        "glm-4-long": "GLM-4-Long - Long Context, 1M/4K, 5 yuan/million tokens",
         "glm-zero-preview": "glm-zero-preview - Free Model, 128K/4K, Free",
-        "GLM-Z1-Air": "GLM-Z1-Air - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
-        "GLM-Z1-AirX": "GLM-Z1-AirX - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
-        "GLM-Z1-flash": "GLM-Z1-flash - Fast Model, 128K/4K, 0.1 yuan/million tokens",
-        "GLM-Z1-flashX-250414": "GLM-Z1-flashX-250414 - Fast Model, 128K/4K, 0.1 yuan/million tokens",
-        "GLM-4-Flash": "GLM-4-Flash - Fast Model, 128K/4K, 0.1 yuan/million tokens",
+        "glm-z1-air": "GLM-Z1-Air - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
+        "glm-z1-airx": "GLM-Z1-AirX - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
+        "glm-z1-flash": "GLM-Z1-flash - Fast Model, 128K/4K, 0.1 yuan/million tokens",
+        "glm-z1-flashx-250414": "GLM-Z1-flashX-250414 - Fast Model, 128K/4K, 0.1 yuan/million tokens",
+        "glm-4-flash": "GLM-4-Flash - Fast Model, 128K/4K, 0.1 yuan/million tokens",
         "glm-4-flash-250414": "glm-4-flash-250414 - Fast Model, 128K/4K, 0.1 yuan/million tokens",
         "glm-4-flashx-250414": "glm-4-flashx-250414 - Fast Model, 128K/4K, 0.1 yuan/million tokens",
-        "CharGLM-4": "CharGLM-4 - Character Model, 128K/4K, 5 yuan/million tokens",
-        "GLM-4-Air": "GLM-4-Air - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
-        "GLM-4-AirX": "GLM-4-AirX - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
-        "GLM-4-Air-250414": "GLM-4-Air-250414 - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
-        "GLM-4-AllTools": "GLM-4-AllTools - All Tools Model, 128K/4K, 5 yuan/million tokens",
-        "GLM-4-Assistant": "GLM-4-Assistant - Assistant Model, 128K/4K, 5 yuan/million tokens",
-        "GLM-4-CodeGeex-4": "GLM-4-CodeGeex-4 - Code Model, 128K/4K, 5 yuan/million tokens"
+        "charglm-4": "CharGLM-4 - Character Model, 128K/4K, 5 yuan/million tokens",
+        "glm-4-air": "GLM-4-Air - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
+        "glm-4-airx": "GLM-4-AirX - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
+        "glm-4-air-250414": "GLM-4-Air-250414 - Lightweight Model, 128K/4K, 0.5 yuan/million tokens",
+        "glm-4-alltools": "GLM-4-AllTools - All Tools Model, 128K/4K, 5 yuan/million tokens",
+        "glm-4-assistant": "GLM-4-Assistant - Assistant Model, 128K/4K, 5 yuan/million tokens",
+        "glm-4-codegeex-4": "GLM-4-CodeGeex-4 - Code Model, 128K/4K, 5 yuan/million tokens"
       }
     },
     "filter_markdown": {
