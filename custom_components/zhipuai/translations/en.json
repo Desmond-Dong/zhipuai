@@ -169,17 +169,7 @@
       "options": {
         "persistent_notification": "Global Notifications (notify.persistent_notification)"
       }
-    },
-    "stop_sequences": {
-      "options": {
-        "。": "Period (。)",
-        "！": "Exclamation mark (！)",
-        "？": "Question mark (？)",
-        "；": "Semicolon (；)",
-        "：": "Colon (：)",
-        ",": "Comma (,)",
-        ".": "Period (.)"
-      }
+
     },
     "tool_choice": {
       "options": {
