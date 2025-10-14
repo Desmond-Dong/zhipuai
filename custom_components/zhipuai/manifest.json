@@ -4,10 +4,10 @@
   "after_dependencies": ["assist_pipeline", "intent", "recorder"],
   "codeowners": ["@knoop7"],
   "config_flow": true,
-  "documentation": "https://github.com/knoop7/zhipuai",
+  "documentation": "https://github.com/Desmond-Dong/zhipuai",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/knoop7/zhipuai/issues",
+  "issue_tracker": "https://github.com/Desmond-Dong/zhipuai/issues",
   "requirements": [],
   "version": "2025.10.13"
 }
