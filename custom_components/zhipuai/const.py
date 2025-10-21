@@ -98,3 +98,12 @@ SERVICE_GENERATE_IMAGE: Final = "generate_image"
 ERROR_GETTING_RESPONSE: Final = "获取响应时出错"
 ERROR_INVALID_API_KEY: Final = "API密钥无效"
 ERROR_CANNOT_CONNECT: Final = "无法连接到智谱AI服务"
+
+# Web Search Tool
+WEB_SEARCH_TOOL: Final = {
+    "type": "web_search",
+    "web_search": {
+        "enable": False,
+        "search_query": ""
+    }
+}

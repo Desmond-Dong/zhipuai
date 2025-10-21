@@ -19,6 +19,12 @@
     }
   },
   "options": {
+    "step": {
+      "init": {
+        "title": "Configuration Options",
+        "description": "Please find the corresponding subentries (Conversation Agent or AI Task) in the integration details page, and click the configuration button on the right side of each subentry to modify settings.\n\nClick 'ZhipuAI' on the integrations page to enter the details page, where you will see the list of configured subentries, each of which can be configured individually."
+      }
+    },
     "abort": {
       "configure_via_subentries": "Please configure conversation and AI task through subentries. Find the corresponding subentries in the devices page."
     }
@@ -54,6 +60,34 @@
             "web_search": "Allow searching the internet"
           }
         }
+      },
+      "options": {
+        "step": {
+          "init": {
+            "title": "Configure Conversation Agent Options",
+            "description": "Customize conversation agent behavior and parameters",
+            "data": {
+              "recommended": "Recommended Mode",
+              "prompt": "Prompt Template",
+              "chat_model": "Chat Model",
+              "temperature": "Temperature",
+              "top_p": "Top P",
+              "top_k": "Top K",
+              "max_tokens": "Max Tokens",
+              "max_history_messages": "Max History Messages",
+              "web_search": "Web Search"
+            },
+            "data_description": {
+              "recommended": "Use recommended settings",
+              "prompt": "Custom system prompt",
+              "temperature": "Control creativity (0-2)",
+              "top_p": "Sampling parameter (0-1)",
+              "max_tokens": "Maximum response length",
+              "max_history_messages": "Number of history messages to keep",
+              "web_search": "Allow searching the internet"
+            }
+          }
+        }
       }
     },
     "ai_task_data": {
@@ -78,6 +112,28 @@
             "temperature": "Control creativity (0-2)",
             "top_p": "Sampling parameter (0-1)",
             "max_tokens": "Maximum response length"
+          }
+        }
+      },
+      "options": {
+        "step": {
+          "init": {
+            "title": "Configure AI Task Options",
+            "description": "Customize AI task behavior and parameters",
+            "data": {
+              "recommended": "Recommended Mode",
+              "chat_model": "Chat Model",
+              "image_model": "Image Model",
+              "temperature": "Temperature",
+              "top_p": "Top P",
+              "max_tokens": "Max Tokens"
+            },
+            "data_description": {
+              "recommended": "Use recommended settings",
+              "temperature": "Control creativity (0-2)",
+              "top_p": "Sampling parameter (0-1)",
+              "max_tokens": "Maximum response length"
+            }
           }
         }
       }
