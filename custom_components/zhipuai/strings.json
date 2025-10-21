@@ -34,24 +34,24 @@
         "init": {
           "data": {
             "name": "名称",
-            "recommended": "推荐模式",
+            "recommended": "推荐模式（使用最佳配置）",
             "prompt": "提示词模板",
             "chat_model": "聊天模型",
-            "temperature": "温度",
-            "top_p": "Top P",
+            "temperature": "温度（创造性）",
+            "top_p": "Top P（采样）",
             "top_k": "Top K",
             "max_tokens": "最大令牌数",
-            "max_history_messages": "历史消息数",
-            "web_search": "联网搜索"
+            "max_history_messages": "最大历史消息数",
+            "web_search": "启用联网搜索"
           },
           "data_description": {
-            "recommended": "使用推荐配置",
-            "prompt": "自定义系统提示词",
-            "temperature": "控制创造性（0-2）",
-            "top_p": "采样参数（0-1）",
-            "max_tokens": "最大响应长度",
-            "max_history_messages": "保留的历史消息数量",
-            "web_search": "允许搜索互联网"
+            "recommended": "启用后将使用推荐的配置参数",
+            "prompt": "自定义系统提示词，可使用模板",
+            "temperature": "控制回复的创造性，0=严谨，2=发散",
+            "top_p": "控制词汇多样性，较低值更保守",
+            "max_tokens": "单次回复的最大长度",
+            "max_history_messages": "保留的对话历史数量",
+            "web_search": "允许AI搜索互联网获取最新信息"
           }
         }
       }
@@ -66,19 +66,39 @@
         "init": {
           "data": {
             "name": "名称",
-            "recommended": "推荐模式",
+            "recommended": "推荐模式（使用最佳配置）",
             "chat_model": "聊天模型",
-            "image_model": "图像模型",
-            "temperature": "温度",
-            "top_p": "Top P",
+            "image_model": "图像生成模型",
+            "temperature": "温度（创造性）",
+            "top_p": "Top P（采样）",
             "max_tokens": "最大令牌数"
           },
           "data_description": {
-            "recommended": "使用推荐配置",
-            "temperature": "控制创造性（0-2）",
-            "top_p": "采样参数（0-1）",
-            "max_tokens": "最大响应长度"
+            "recommended": "启用后将使用推荐的配置参数",
+            "temperature": "控制回复的创造性，0=严谨，2=发散",
+            "top_p": "控制词汇多样性，较低值更保守",
+            "max_tokens": "单次回复的最大长度"
           }
+        }
+      }
+    }
+  },
+  "services": {
+    "generate_image": {
+      "name": "生成图像",
+      "description": "使用智谱AI生成图像",
+      "fields": {
+        "prompt": {
+          "name": "提示词",
+          "description": "描述要生成的图像"
+        },
+        "size": {
+          "name": "尺寸",
+          "description": "图像尺寸"
+        },
+        "model": {
+          "name": "模型",
+          "description": "使用的图像生成模型"
         }
       }
     }

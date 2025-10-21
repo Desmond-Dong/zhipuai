@@ -44,10 +44,10 @@ async def async_get_song_id(query, prefer_non_vip=False):
     params = {'s': query, 'type': 1, 'limit': 20, 'offset': 0}
     artist_query = None
     song_query = query
-    
+
     if " - " in query:
         song_query, artist_query = [p.strip() for p in query.split(" - ", 1)]
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(search_url, params=params, headers=HEADERS, ssl=False) as response:
@@ -55,27 +55,27 @@ async def async_get_song_id(query, prefer_non_vip=False):
                 if 'result' in result and 'songs' in result['result'] and result['result']['songs']:
                     songs = result['result']['songs']
                     scored_songs = []
-                    
+
                     for song in songs:
                         song_name = song.get('name', '')
                         artist_names = [artist.get('name', '') for artist in song.get('artists', [])]
                         is_vip = song.get('fee', 0) == 1
                         score = 0
-                        
+
                         if song_name.lower() == song_query.lower(): score += 100
                         elif song_name.lower().startswith(song_query.lower()): score += 80
                         elif song_query.lower() in song_name.lower(): score += 60
-                        
+
                         if artist_query:
                             artist_score = max([100 if artist.lower() == artist_query.lower() else 80 if artist_query.lower() in artist.lower() else 60 if artist.lower() in artist_query.lower() else 0 for artist in artist_names])
                             score += artist_score
-                        
+
                         if song.get('sq'): score += 15
                         elif song.get('h'): score += 10
                         if prefer_non_vip and not is_vip: score += 5
-                        
+
                         scored_songs.append((song, score))
-                    
+
                     scored_songs.sort(key=lambda x: x[1], reverse=True)
                     return scored_songs[0][0]['id'] if scored_songs else None
     except Exception:
@@ -117,23 +117,23 @@ async def async_get_mp3_url(song_id):
 async def async_get_song_duration(url):
     if not HAS_MUTAGEN:
         return 0
-        
+
     temp_dir = None
     try:
         temp_dir = tempfile.mkdtemp()
         temp_file = os.path.join(temp_dir, "temp_song.mp3")
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=HEADERS, ssl=False) as response:
                 if response.status != 200:
                     return 0
-                    
+
                 async with aiofiles.open(temp_file, 'wb') as f:
                     await f.write(await response.read())
-        
+
         loop = asyncio.get_event_loop()
         duration = await loop.run_in_executor(None, lambda: int(MP3(temp_file).info.length))
-        
+
         return duration
     except Exception:
         return 0

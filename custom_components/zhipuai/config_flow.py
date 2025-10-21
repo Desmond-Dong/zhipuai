@@ -1,267 +1,192 @@
+"""Config flow for 智谱清言 integration."""
+
 from __future__ import annotations
-from typing import Any, Mapping
+
+import logging
 from types import MappingProxyType
-import voluptuous as vol
+from typing import Any
+
 import aiohttp
-from homeassistant.core import HomeAssistant, callback
+import voluptuous as vol
+
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
     ConfigSubentryFlow,
+    OptionsFlow,
     SubentryFlowResult,
 )
-from homeassistant import exceptions
-from homeassistant.const import CONF_API_KEY, CONF_NAME, CONF_LLM_HASS_API
-from homeassistant.helpers import llm
-import homeassistant.helpers.config_validation as cv
+from homeassistant.const import CONF_API_KEY, CONF_NAME
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import llm, selector
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
-    SelectOptionDict,
+    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
     TemplateSelector,
 )
 
 from .const import (
-    CONF_PROMPT,
-    CONF_TEMPERATURE,
-    DEFAULT_NAME,
-    DEFAULT_CONVERSATION_NAME,
-    DEFAULT_AI_TASK_NAME,
     CONF_CHAT_MODEL,
-    CONF_MAX_TOKENS,
-    CONF_RECOMMENDED,
-    CONF_TOP_P,
+    CONF_IMAGE_MODEL,
+    CONF_LLM_HASS_API,
     CONF_MAX_HISTORY_MESSAGES,
+    CONF_MAX_TOKENS,
+    CONF_PROMPT,
+    CONF_RECOMMENDED,
+    CONF_TEMPERATURE,
+    CONF_TOP_K,
+    CONF_TOP_P,
+    CONF_WEB_SEARCH,
+    DEFAULT_AI_TASK_NAME,
+    DEFAULT_CONVERSATION_NAME,
+    DEFAULT_TITLE,
     DOMAIN,
+    RECOMMENDED_AI_TASK_MAX_TOKENS,
+    RECOMMENDED_AI_TASK_MODEL,
+    RECOMMENDED_AI_TASK_TEMPERATURE,
+    RECOMMENDED_AI_TASK_TOP_P,
+    RECOMMENDED_CHAT_MODEL,
+    RECOMMENDED_IMAGE_MODEL,
+    RECOMMENDED_MAX_HISTORY_MESSAGES,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_TEMPERATURE,
+    RECOMMENDED_TOP_K,
     RECOMMENDED_TOP_P,
-    RECOMMENDED_MAX_HISTORY_MESSAGES,
-    CONF_MAX_TOOL_ITERATIONS,
-    DEFAULT_MAX_TOOL_ITERATIONS,
-    CONF_WEB_SEARCH,
-    DEFAULT_WEB_SEARCH,
-    CONF_HISTORY_ANALYSIS,
-    CONF_HISTORY_ENTITIES,
-    CONF_HISTORY_DAYS,
-    DEFAULT_HISTORY_ANALYSIS,
-    DEFAULT_HISTORY_DAYS,
-    MAX_HISTORY_DAYS,
-    CONF_HISTORY_INTERVAL,
-    DEFAULT_HISTORY_INTERVAL,
-    CONF_REQUEST_TIMEOUT,
-    DEFAULT_REQUEST_TIMEOUT,
-    CONF_PRESENCE_PENALTY,
-    DEFAULT_PRESENCE_PENALTY,
-    CONF_FREQUENCY_PENALTY,
-    DEFAULT_FREQUENCY_PENALTY,
-    CONF_STOP_SEQUENCES,
-    DEFAULT_STOP_SEQUENCES,
-    CONF_TOOL_CHOICE,
-    DEFAULT_TOOL_CHOICE,
-    CONF_FILTER_MARKDOWN,
-    DEFAULT_FILTER_MARKDOWN,
-    CONF_NOTIFY_SERVICE,
-    DEFAULT_NOTIFY_SERVICE,
+    ZHIPUAI_CHAT_MODELS,
+    ZHIPUAI_CHAT_URL,
+    ZHIPUAI_IMAGE_MODELS,
 )
 
+_LOGGER = logging.getLogger(__name__)
 
-ZHIPUAI_MODELS = [
-    "GLM-4.5",
-    "GLM-4.5-X",
-    "GLM-4.5-Air",
-    "GLM-4.5-AirX",
-    "GLM-4-Plus",
-    "GLM-4-0520",
-    "GLM-4-Long",
-    "glm-zero-preview",
-    "GLM-Z1-Air",
-    "GLM-Z1-AirX",
-    "GLM-Z1-Flash",
-    "GLM-Z1-FlashX",
-    "GLM-4.5-Flash",
-    "GLM-4-Flash",
-    "GLM-4-flash-250414",
-    "GLM-4-Air",
-    "GLM-4-AirX",
-    "GLM-4-Air-250414",
-    "GLM-4-AllTools",
-    "GLM-4-Assistant",
-    "CharGLM-4",
-    "GLM-4-CodeGeex-4"
-]
+STEP_USER_DATA_SCHEMA = vol.Schema({vol.Required(CONF_API_KEY): str})
 
-RECOMMENDED_CHAT_MODEL = "glm-4.5-flash"
-
-RECOMMENDED_OPTIONS = {
+# Recommended options for conversation
+RECOMMENDED_CONVERSATION_OPTIONS = {
     CONF_RECOMMENDED: True,
     CONF_LLM_HASS_API: llm.LLM_API_ASSIST,
-    CONF_PROMPT: """您是 Home Assistant 的语音助手。
-如实回答有关世界的问题。
-以纯文本形式回答。保持简单明了。""",
-    CONF_MAX_HISTORY_MESSAGES: RECOMMENDED_MAX_HISTORY_MESSAGES,
+    CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
     CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
-    CONF_MAX_TOOL_ITERATIONS: DEFAULT_MAX_TOOL_ITERATIONS,
+    CONF_TEMPERATURE: RECOMMENDED_TEMPERATURE,
+    CONF_TOP_P: RECOMMENDED_TOP_P,
+    CONF_TOP_K: RECOMMENDED_TOP_K,
+    CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS,
+    CONF_MAX_HISTORY_MESSAGES: RECOMMENDED_MAX_HISTORY_MESSAGES,
+    CONF_WEB_SEARCH: True,
 }
 
-class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 1
-    MINOR_VERSION = 0
+# Recommended options for AI task
+RECOMMENDED_AI_TASK_OPTIONS = {
+    CONF_RECOMMENDED: True,
+    CONF_CHAT_MODEL: RECOMMENDED_AI_TASK_MODEL,
+    CONF_TEMPERATURE: RECOMMENDED_AI_TASK_TEMPERATURE,
+    CONF_TOP_P: RECOMMENDED_AI_TASK_TOP_P,
+    CONF_MAX_TOKENS: RECOMMENDED_AI_TASK_MAX_TOKENS,
+    CONF_IMAGE_MODEL: RECOMMENDED_IMAGE_MODEL,
+}
 
-    def __init__(self) -> None:
-        self._reauth_entry: ConfigEntry | None = None
-        self._reconfigure_entry: ConfigEntry | None = None
+
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
+    """Validate the user input allows us to connect."""
+    headers = {
+        "Authorization": f"Bearer {data[CONF_API_KEY]}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "GLM-4-Flash",
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 10,
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            ZHIPUAI_CHAT_URL,
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as response:
+            if response.status == 401:
+                raise ValueError("Invalid API key")
+            if response.status != 200:
+                error_text = await response.text()
+                raise Exception(f"API test failed: {error_text}")
+
+
+class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for 智谱清言."""
+
+    VERSION = 2
+    MINOR_VERSION = 2
 
     async def async_step_user(
-        self,
-        user_input: dict[str, Any] | None = None,
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Handle the initial step."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=STEP_USER_DATA_SCHEMA,
+                description_placeholders={
+                    "api_key_url": "https://open.bigmodel.cn/usercenter/apikeys"
+                },
+            )
+
         errors = {}
-        if user_input is not None:
-            try:
-                await self._validate_api_key(user_input[CONF_API_KEY])
-                return self.async_create_entry(
-                    title=user_input[CONF_NAME],
-                    data=user_input,
-                    subentries=[
-                        {
-                            "subentry_type": "conversation",
-                            "data": RECOMMENDED_OPTIONS,
-                            "title": DEFAULT_CONVERSATION_NAME,
-                            "unique_id": None,
-                        },
-                        {
-                            "subentry_type": "ai_task_data",
-                            "data": RECOMMENDED_OPTIONS,
-                            "title": DEFAULT_AI_TASK_NAME,
-                            "unique_id": None,
-                        },
-                    ],
-                )
-            except UnauthorizedError:
-                errors["base"] = "invalid_auth"
-            except aiohttp.ClientError:
-                errors["base"] = "cannot_connect"
-            except ModelNotFound:
-                errors["base"] = "model_not_found"
-            except Exception:
-                errors["base"] = "unknown"
+
+        try:
+            await validate_input(self.hass, user_input)
+        except ValueError:
+            _LOGGER.exception("Invalid API key")
+            errors["base"] = "invalid_auth"
+        except aiohttp.ClientError:
+            _LOGGER.exception("Cannot connect")
+            errors["base"] = "cannot_connect"
+        except Exception:
+            _LOGGER.exception("Unexpected exception")
+            errors["base"] = "unknown"
+        else:
+            # Create entry with two subentries
+            return self.async_create_entry(
+                title=DEFAULT_TITLE,
+                data=user_input,
+                subentries=[
+                    {
+                        "subentry_type": "conversation",
+                        "data": RECOMMENDED_CONVERSATION_OPTIONS,
+                        "title": DEFAULT_CONVERSATION_NAME,
+                        "unique_id": None,
+                    },
+                    {
+                        "subentry_type": "ai_task_data",
+                        "data": RECOMMENDED_AI_TASK_OPTIONS,
+                        "title": DEFAULT_AI_TASK_NAME,
+                        "unique_id": None,
+                    },
+                ],
+            )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({
-                vol.Required(CONF_NAME, default=DEFAULT_NAME): cv.string,
-                vol.Required(CONF_API_KEY): cv.string,
-            }),
+            data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
+            description_placeholders={
+                "api_key_url": "https://open.bigmodel.cn/usercenter/apikeys"
+            },
         )
-
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
-        self._reauth_entry = self._get_reauth_entry()
-        return await self.async_step_reauth_confirm()
-
-    async def async_step_reauth_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        errors = {}
-
-        if user_input is not None:
-            try:
-                await self._validate_api_key(user_input[CONF_API_KEY])
-                assert self._reauth_entry is not None
-                return self.async_update_reload_and_abort(
-                    self._reauth_entry,
-                    data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
-                    reason="reauth_successful",
-                )
-            except UnauthorizedError:
-                errors["base"] = "invalid_auth"
-            except aiohttp.ClientError:
-                errors["base"] = "cannot_connect" 
-            except Exception:
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="reauth_confirm",
-            data_schema=vol.Schema({
-                vol.Required(CONF_API_KEY): cv.string,
-            }),
-            errors=errors,
-        )
-
-    async def async_step_reconfigure(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
-        self._reconfigure_entry = self._get_reconfigure_entry()
-        return await self.async_step_reconfigure_confirm()
-
-    async def async_step_reconfigure_confirm(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        errors = {}
-
-        if user_input is not None:
-            try:
-                await self._validate_api_key(user_input[CONF_API_KEY])
-                assert self._reconfigure_entry is not None
-                return self.async_update_reload_and_abort(
-                    self._reconfigure_entry,
-                    data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
-                    reason="reconfigure_successful",
-                )
-            except UnauthorizedError:
-                errors["base"] = "invalid_auth"
-            except aiohttp.ClientError:
-                errors["base"] = "cannot_connect"
-            except Exception:
-                errors["base"] = "unknown"
-
-        return self.async_show_form(
-            step_id="reconfigure_confirm",
-            data_schema=vol.Schema({
-                vol.Required(CONF_API_KEY): cv.string,
-            }),
-            errors=errors,
-        )
-
-    async def _validate_api_key(self, api_key: str) -> None:
-        url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        data = {
-            "model": RECOMMENDED_CHAT_MODEL,
-            "messages": [{"role": "user", "content": "你好"}]
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        return
-                    elif response.status == 401:
-                        raise UnauthorizedError()
-                    else:
-                        response_json = await response.json()
-                        error = response_json.get("error", {})
-                        error_message = error.get("message", "")
-                        if "model not found" in error_message.lower():
-                            raise ModelNotFound()
-                        else:
-                            raise InvalidAPIKey()
-            except aiohttp.ClientError as e:
-                raise
 
     @staticmethod
-    @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> ZhipuAIOptionsFlow:
-        return ZhipuAIOptionsFlow(config_entry)
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> OptionsFlow:
+        """Create the options flow."""
+        return ZhipuAIOptionsFlow()
 
     @classmethod
-    @callback
     def async_get_supported_subentry_types(
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
@@ -273,325 +198,59 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ZhipuAIOptionsFlow(OptionsFlow):
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        self._config_entry = config_entry
-        self._data = {}
+    """智谱清言 config flow options handler."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors = {}
-        if user_input is not None:
-            try:
-                self._data.update(user_input)  
-                if user_input.get(CONF_HISTORY_ANALYSIS):
-                    return await self.async_step_history()
-                return self.async_create_entry(title="", data=self._data)
-            except ValueError:
-                errors["base"] = "invalid_option"
-
-        schema = vol.Schema(zhipuai_config_option_schema(self.hass, self._config_entry.options))
-        return self.async_show_form(
-            step_id="init",
-            data_schema=schema,
-            errors=errors,
-        )
-
-    async def async_step_history(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        errors = {}
-        current_options = self._config_entry.options
-        
-        if user_input is not None:
-            try:
-                days = user_input.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
-                if days < 1 or days > MAX_HISTORY_DAYS:
-                    errors[CONF_HISTORY_DAYS] = "invalid_days"
-                if not user_input.get(CONF_HISTORY_ENTITIES):
-                    errors[CONF_HISTORY_ENTITIES] = "no_entities"
-
-                if not errors:
-                    self._data.update(user_input)
-                    return self.async_create_entry(title="", data=self._data)
-            except ValueError:
-                errors["base"] = "invalid_option"
-
-        entities = {}
-        for entity in self.hass.states.async_all():
-            friendly_name = entity.attributes.get("friendly_name", entity.entity_id)
-            entities[entity.entity_id] = f"{friendly_name} ({entity.entity_id})"
-
-        return self.async_show_form(
-            step_id="history",
-            data_schema=vol.Schema({
-                vol.Required(
-                    CONF_HISTORY_ENTITIES,
-                    default=current_options.get(CONF_HISTORY_ENTITIES, [])
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=[{"value": k, "label": v} for k, v in entities.items()],
-                        multiple=True,
-                        mode="dropdown",
-                        custom_value=False,
-                    )
-                ),
-                vol.Optional(
-                    CONF_HISTORY_INTERVAL,
-                    default=current_options.get(CONF_HISTORY_INTERVAL, DEFAULT_HISTORY_INTERVAL),
-                ): vol.Coerce(int),
-                vol.Required(
-                    CONF_HISTORY_DAYS,
-                    default=current_options.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
-                ): vol.All(
-                    vol.Coerce(int),
-                    vol.Range(min=1, max=MAX_HISTORY_DAYS),
-                ),
-            }),
-            errors=errors,
-        )
-
-
-def zhipuai_config_option_schema(
-    hass: HomeAssistant,
-    options: dict[str, Any] | MappingProxyType[str, Any],
-) -> dict:
-    hass_apis = [SelectOptionDict(label="No", value="none")]
-    hass_apis.extend(
-        SelectOptionDict(label=api.name, value=api.id)
-        for api in llm.async_get_apis(hass)
-    )
-
-    notify_services = [SelectOptionDict(value="persistent_notification", label="全局通知 (notify.persistent_notification)")]
-    
-    for service_id in hass.services.async_services().get("notify", {}):
-        if service_id != "persistent_notification":
-            notify_services.append(SelectOptionDict(value=service_id, label=f"{service_id}"))
-    
-    schema = {
-        vol.Optional(
-            CONF_PROMPT,
-            description={"suggested_value": options.get(CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT)},
-        ): TemplateSelector(),
-        vol.Optional(
-            CONF_LLM_HASS_API,
-            description={"suggested_value": options.get(CONF_LLM_HASS_API, llm.LLM_API_ASSIST)},
-            default=llm.LLM_API_ASSIST,
-        ): SelectSelector(SelectSelectorConfig(options=hass_apis)),
-        vol.Required(
-            CONF_RECOMMENDED,
-            default=options.get(CONF_RECOMMENDED, False)
-        ): bool,
-        vol.Optional(
-            CONF_CHAT_MODEL,
-            description={"suggested_value": options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)},
-            default=RECOMMENDED_CHAT_MODEL,
-        ): SelectSelector(SelectSelectorConfig(
-            options=[
-                SelectOptionDict(
-                    value=model_id,
-                    label=model_id
-                )
-                for model_id in ZHIPUAI_MODELS
-            ],
-            translation_key="model_descriptions"
-        )),
-        vol.Optional(
-            CONF_FILTER_MARKDOWN,
-            description={"suggested_value": options.get(CONF_FILTER_MARKDOWN, DEFAULT_FILTER_MARKDOWN)},
-            default=DEFAULT_FILTER_MARKDOWN,
-        ): SelectSelector(
-            SelectSelectorConfig(
-                options=[
-                    SelectOptionDict(value="off", label="filter_markdown.off"),
-                    SelectOptionDict(value="on", label="filter_markdown.on")
-                ],
-                mode="dropdown",
-                translation_key="filter_markdown"
-            )
-        ),
-        vol.Optional(
-            CONF_NOTIFY_SERVICE,
-            description={"suggested_value": options.get(CONF_NOTIFY_SERVICE, DEFAULT_NOTIFY_SERVICE)},
-            default=DEFAULT_NOTIFY_SERVICE,
-        ): SelectSelector(
-            SelectSelectorConfig(
-                options=notify_services,
-                mode="dropdown",
-                translation_key="notify_service"
-            )
-        ),
-        vol.Optional(
-            CONF_MAX_HISTORY_MESSAGES,
-            description={"suggested_value": options.get(CONF_MAX_HISTORY_MESSAGES)},
-            default=RECOMMENDED_MAX_HISTORY_MESSAGES,
-        ): int,
-        vol.Optional(
-            CONF_MAX_TOOL_ITERATIONS,
-            description={"suggested_value": options.get(CONF_MAX_TOOL_ITERATIONS, DEFAULT_MAX_TOOL_ITERATIONS)},
-            default=DEFAULT_MAX_TOOL_ITERATIONS,
-        ): int,
-        vol.Optional(
-            CONF_REQUEST_TIMEOUT,
-            description={"suggested_value": options.get(CONF_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT)},
-            default=DEFAULT_REQUEST_TIMEOUT,
-        ): vol.All(
-            vol.Coerce(float),
-            vol.Range(min=10, max=120),
-            msg="超时时间必须在10到120秒之间"
-        ),
-        vol.Optional(
-            CONF_WEB_SEARCH,
-            default=options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
-            description={"suggested_value": options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH)},
-        ): bool,
-        vol.Optional(
-            CONF_HISTORY_ANALYSIS,
-            default=options.get(CONF_HISTORY_ANALYSIS, DEFAULT_HISTORY_ANALYSIS),
-            description={"suggested_value": options.get(CONF_HISTORY_ANALYSIS, DEFAULT_HISTORY_ANALYSIS)},
-        ): bool,
-    }
-
-    if not options.get(CONF_RECOMMENDED, False):
-        schema.update({
-            vol.Optional(
-                CONF_MAX_TOKENS,
-                description={"suggested_value": options.get(CONF_MAX_TOKENS)},
-                default=RECOMMENDED_MAX_TOKENS,
-            ): int,
-            vol.Optional(
-                CONF_TOP_P,
-                description={"suggested_value": options.get(CONF_TOP_P)},
-                default=RECOMMENDED_TOP_P,
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=0.0,
-                    max=1.0,
-                    step=0.1,
-                    mode="box",
-                )
-            ),
-            vol.Optional(
-                CONF_TEMPERATURE,
-                description={"suggested_value": options.get(CONF_TEMPERATURE)},
-                default=RECOMMENDED_TEMPERATURE,
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=0.0,
-                    max=2.0,
-                    step=0.1,
-                    mode="box",
-                )
-            ),
-            vol.Optional(
-                CONF_PRESENCE_PENALTY,
-                description={"suggested_value": options.get(CONF_PRESENCE_PENALTY, DEFAULT_PRESENCE_PENALTY)},
-                default=DEFAULT_PRESENCE_PENALTY,
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=-2.0,
-                    max=2.0,
-                    step=0.1,
-                    mode="box",
-                )
-            ),
-            vol.Optional(
-                CONF_FREQUENCY_PENALTY,
-                description={"suggested_value": options.get(CONF_FREQUENCY_PENALTY, DEFAULT_FREQUENCY_PENALTY)},
-                default=DEFAULT_FREQUENCY_PENALTY,
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=-2.0,
-                    max=2.0,
-                    step=0.1,
-                    mode="box",
-                )
-            ),
-            vol.Optional(
-                CONF_STOP_SEQUENCES,
-                description={"suggested_value": options.get(CONF_STOP_SEQUENCES, DEFAULT_STOP_SEQUENCES)},
-                default=DEFAULT_STOP_SEQUENCES,
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(value="\\n", label="stop_sequences.\\n"),
-                        SelectOptionDict(value="。", label="stop_sequences.。"),
-                        SelectOptionDict(value="！", label="stop_sequences.！"),
-                        SelectOptionDict(value="？", label="stop_sequences.？"),
-                        SelectOptionDict(value="；", label="stop_sequences.；"),
-                        SelectOptionDict(value="：", label="stop_sequences.："),
-                        SelectOptionDict(value=",", label="stop_sequences.,"),
-                        SelectOptionDict(value=".", label="stop_sequences..")
-                    ],
-                    multiple=True,
-                    mode="dropdown",
-                    translation_key="stop_sequences"
-                )
-            ),
-            vol.Optional(
-                CONF_TOOL_CHOICE,
-                description={"suggested_value": options.get(CONF_TOOL_CHOICE, DEFAULT_TOOL_CHOICE)},
-                default=DEFAULT_TOOL_CHOICE,
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(value="auto", label="tool_choice.auto"),
-                        SelectOptionDict(value="none", label="tool_choice.none"),
-                        SelectOptionDict(value="force", label="tool_choice.force")
-                    ],
-                    mode="dropdown",
-                    translation_key="tool_choice"
-                )
-            ),
-        })
-
-    return schema
-
-class UnknownError(exceptions.HomeAssistantError):
-    pass
-
-class UnauthorizedError(exceptions.HomeAssistantError):
-    pass
-
-class InvalidAPIKey(exceptions.HomeAssistantError):
-    pass
-
-class ModelNotFound(exceptions.HomeAssistantError):
-    pass
+        """Manage the options."""
+        # Options are now managed through subentry configuration
+        # Just show a message directing users to configure subentries
+        return self.async_abort(reason="configure_via_subentries")
 
 
 class ZhipuAISubentryFlowHandler(ConfigSubentryFlow):
-    """Flow for managing conversation subentries."""
+    """Handle subentry flow for conversation and AI task."""
+
+    options: dict[str, Any]
 
     @property
     def _is_new(self) -> bool:
         """Return if this is a new subentry."""
         return self.source == "user"
 
-    async def async_step_set_options(
+    async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Set conversation options."""
+        """Handle subentry setup."""
+        if self._subentry_type == "ai_task_data":
+            self.options = RECOMMENDED_AI_TASK_OPTIONS.copy()
+        else:
+            self.options = RECOMMENDED_CONVERSATION_OPTIONS.copy()
+        return await self.async_step_init(user_input)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle subentry reconfiguration."""
+        self.options = self._get_reconfigure_subentry().data.copy()
+        return await self.async_step_init(user_input)
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Handle options for subentry."""
         errors: dict[str, str] = {}
 
-        if user_input is None:
-            if self._is_new:
-                options: dict[str, Any]
-                if self._subentry_type == "ai_task_data":
-                    options = RECOMMENDED_OPTIONS.copy()
-                else:
-                    options = RECOMMENDED_OPTIONS.copy()
-            else:
-                # If this is a reconfiguration, we need to copy the existing options
-                # so that we can show the current values in the form.
-                options = self._get_reconfigure_subentry().data.copy()
-        else:
-            if user_input.get(CONF_HISTORY_ANALYSIS):
-                return await self.async_step_history(user_input)
+        if user_input is not None:
+            # For conversation subentry, always set LLM_HASS_API (not user-configurable)
+            if self._subentry_type == "conversation":
+                user_input[CONF_LLM_HASS_API] = llm.LLM_API_ASSIST
 
+            # Update or create subentry
             if self._is_new:
                 return self.async_create_entry(
-                    title=user_input.pop(CONF_NAME, DEFAULT_AI_TASK_NAME if self._subentry_type == "ai_task_data" else DEFAULT_CONVERSATION_NAME),
+                    title=user_input.pop(CONF_NAME),
                     data=user_input,
                 )
 
@@ -601,74 +260,151 @@ class ZhipuAISubentryFlowHandler(ConfigSubentryFlow):
                 data=user_input,
             )
 
-        schema = vol.Schema(zhipuai_config_option_schema(self.hass, options))
-        return self.async_show_form(
-            step_id="set_options", data_schema=schema, errors=errors
-        )
+        # Get options
+        options = self.options
 
-    async def async_step_history(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Handle history step."""
-        errors: dict[str, str] = {}
-        current_options = self._get_reconfigure_subentry().data if not self._is_new else {}
+        # Get default name
+        if self._is_new:
+            if self._subentry_type == "ai_task_data":
+                default_name = DEFAULT_AI_TASK_NAME
+            else:
+                default_name = DEFAULT_CONVERSATION_NAME
+        else:
+            default_name = self._get_reconfigure_subentry().title
 
-        if user_input is not None:
-            try:
-                days = user_input.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
-                if days < 1 or days > MAX_HISTORY_DAYS:
-                    errors[CONF_HISTORY_DAYS] = "invalid_days"
-                if not user_input.get(CONF_HISTORY_ENTITIES):
-                    errors[CONF_HISTORY_ENTITIES] = "no_entities"
-
-                if not errors:
-                    if self._is_new:
-                        return self.async_create_entry(
-                            title=user_input.pop(CONF_NAME, "Zhipu AI Task"),
-                            data=user_input,
-                        )
-
-                    return self.async_update_and_abort(
-                        self._get_entry(),
-                        self._get_reconfigure_subentry(),
-                        data=user_input,
-                    )
-            except ValueError:
-                errors["base"] = "invalid_option"
-
-        entities = {}
-        for entity in self.hass.states.async_all():
-            friendly_name = entity.attributes.get("friendly_name", entity.entity_id)
-            entities[entity.entity_id] = f"{friendly_name} ({entity.entity_id})"
+        # Build schema based on subentry type and recommended mode
+        schema = await self._build_schema(options, default_name)
 
         return self.async_show_form(
-            step_id="history",
-            data_schema=vol.Schema({
-                vol.Required(
-                    CONF_HISTORY_ENTITIES,
-                    default=current_options.get(CONF_HISTORY_ENTITIES, [])
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=[{"value": k, "label": v} for k, v in entities.items()],
-                        multiple=True,
-                        mode="dropdown",
-                        custom_value=False,
-                    )
-                ),
-                vol.Optional(
-                    CONF_HISTORY_INTERVAL,
-                    default=current_options.get(CONF_HISTORY_INTERVAL, DEFAULT_HISTORY_INTERVAL),
-                ): vol.Coerce(int),
-                vol.Required(
-                    CONF_HISTORY_DAYS,
-                    default=current_options.get(CONF_HISTORY_DAYS, DEFAULT_HISTORY_DAYS)
-                ): vol.All(
-                    vol.Coerce(int),
-                    vol.Range(min=1, max=MAX_HISTORY_DAYS),
-                ),
-            }),
+            step_id="init",
+            data_schema=vol.Schema(schema),
             errors=errors,
         )
 
-    async_step_reconfigure = async_step_set_options
-    async_step_user = async_step_set_options
+    async def _build_schema(
+        self, options: dict[str, Any], default_name: str
+    ) -> dict:
+        """Build configuration schema."""
+        schema: dict[vol.Required | vol.Optional, Any] = {}
+
+        # Add name field for new entries
+        if self._is_new:
+            schema[vol.Required(CONF_NAME, default=default_name)] = str
+
+        # Add recommended mode toggle
+        schema[
+            vol.Required(CONF_RECOMMENDED, default=options.get(CONF_RECOMMENDED, True))
+        ] = bool
+
+        recommended = options.get(CONF_RECOMMENDED, True)
+
+        # Conversation-specific options
+        if self._subentry_type == "conversation":
+            schema.update({
+                vol.Optional(
+                    CONF_PROMPT,
+                    description={"suggested_value": options.get(CONF_PROMPT)},
+                ): TemplateSelector(),
+            })
+
+        # Show advanced options only in non-recommended mode
+        if not recommended:
+            if self._subentry_type == "conversation":
+                schema.update(self._get_conversation_advanced_schema(options))
+            else:
+                schema.update(self._get_ai_task_advanced_schema(options))
+
+        return schema
+
+    def _get_conversation_advanced_schema(
+        self, options: dict[str, Any]
+    ) -> dict:
+        """Get advanced schema for conversation."""
+        return {
+            vol.Optional(
+                CONF_CHAT_MODEL,
+                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_CHAT_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TEMPERATURE,
+                default=options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=2, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TOP_P,
+                default=options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=1, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TOP_K,
+                default=options.get(CONF_TOP_K, RECOMMENDED_TOP_K),
+            ): int,
+            vol.Optional(
+                CONF_MAX_TOKENS,
+                default=options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
+            ): int,
+            vol.Optional(
+                CONF_MAX_HISTORY_MESSAGES,
+                default=options.get(CONF_MAX_HISTORY_MESSAGES, RECOMMENDED_MAX_HISTORY_MESSAGES),
+            ): int,
+            vol.Optional(
+                CONF_WEB_SEARCH,
+                default=options.get(CONF_WEB_SEARCH, True),
+            ): bool,
+        }
+
+    def _get_ai_task_advanced_schema(
+        self, options: dict[str, Any]
+    ) -> dict:
+        """Get advanced schema for AI task."""
+        return {
+            vol.Optional(
+                CONF_CHAT_MODEL,
+                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_AI_TASK_MODEL),
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_CHAT_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_IMAGE_MODEL,
+                default=options.get(CONF_IMAGE_MODEL, RECOMMENDED_IMAGE_MODEL),
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_IMAGE_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TEMPERATURE,
+                default=options.get(CONF_TEMPERATURE, RECOMMENDED_AI_TASK_TEMPERATURE),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=2, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TOP_P,
+                default=options.get(CONF_TOP_P, RECOMMENDED_AI_TASK_TOP_P),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=1, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_MAX_TOKENS,
+                default=options.get(CONF_MAX_TOKENS, RECOMMENDED_AI_TASK_MAX_TOKENS),
+            ): int,
+        }
