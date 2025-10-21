@@ -38,6 +38,8 @@
       "entry_type": "智谱对话助手",
       "step": {
         "init": {
+          "title": "配置对话助手",
+          "description": "自定义对话助手的行为和参数。开启推荐模式将使用最佳配置，关闭后可自定义所有参数。",
           "data": {
             "name": "名称",
             "recommended": "推荐模式",
@@ -60,34 +62,6 @@
             "web_search": "允许搜索互联网"
           }
         }
-      },
-      "options": {
-        "step": {
-          "init": {
-            "title": "配置对话助手选项",
-            "description": "自定义对话助手的行为和参数",
-            "data": {
-              "recommended": "推荐模式",
-              "prompt": "提示词模板",
-              "chat_model": "聊天模型",
-              "temperature": "温度",
-              "top_p": "Top P",
-              "top_k": "Top K",
-              "max_tokens": "最大令牌数",
-              "max_history_messages": "历史消息数",
-              "web_search": "联网搜索"
-            },
-            "data_description": {
-              "recommended": "使用推荐配置",
-              "prompt": "自定义系统提示词",
-              "temperature": "控制创造性（0-2）",
-              "top_p": "采样参数（0-1）",
-              "max_tokens": "最大响应长度",
-              "max_history_messages": "保留的历史消息数量",
-              "web_search": "允许搜索互联网"
-            }
-          }
-        }
       }
     },
     "ai_task_data": {
@@ -98,6 +72,8 @@
       "entry_type": "智谱AI任务",
       "step": {
         "init": {
+          "title": "配置AI任务",
+          "description": "自定义AI任务的行为和参数。开启推荐模式将使用最佳配置，关闭后可自定义所有参数。",
           "data": {
             "name": "名称",
             "recommended": "推荐模式",
@@ -112,28 +88,6 @@
             "temperature": "控制创造性（0-2）",
             "top_p": "采样参数（0-1）",
             "max_tokens": "最大响应长度"
-          }
-        }
-      },
-      "options": {
-        "step": {
-          "init": {
-            "title": "配置AI任务选项",
-            "description": "自定义AI任务的行为和参数",
-            "data": {
-              "recommended": "推荐模式",
-              "chat_model": "聊天模型",
-              "image_model": "图像模型",
-              "temperature": "温度",
-              "top_p": "Top P",
-              "max_tokens": "最大令牌数"
-            },
-            "data_description": {
-              "recommended": "使用推荐配置",
-              "temperature": "控制创造性（0-2）",
-              "top_p": "采样参数（0-1）",
-              "max_tokens": "最大响应长度"
-            }
           }
         }
       }
