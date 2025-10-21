@@ -19,6 +19,12 @@
     }
   },
   "options": {
+    "step": {
+      "init": {
+        "title": "配置选项",
+        "description": "请在集成详情页面中找到对应的子条目（对话助手或AI任务），点击子条目右侧的配置按钮来修改设置。\n\n在集成页面点击「智谱清言」，进入详情页后，您会看到已配置的子条目列表，每个子条目都可以单独配置。"
+      }
+    },
     "abort": {
       "configure_via_subentries": "请通过子条目配置对话助手和AI任务。在设备页面中找到对应的子条目进行配置。"
     }
@@ -54,6 +60,34 @@
             "web_search": "允许AI搜索互联网获取最新信息"
           }
         }
+      },
+      "options": {
+        "step": {
+          "init": {
+            "title": "配置对话助手选项",
+            "description": "自定义对话助手的行为和参数",
+            "data": {
+              "recommended": "推荐模式（使用最佳配置）",
+              "prompt": "提示词模板",
+              "chat_model": "聊天模型",
+              "temperature": "温度（创造性）",
+              "top_p": "Top P（采样）",
+              "top_k": "Top K",
+              "max_tokens": "最大令牌数",
+              "max_history_messages": "最大历史消息数",
+              "web_search": "启用联网搜索"
+            },
+            "data_description": {
+              "recommended": "启用后将使用推荐的配置参数",
+              "prompt": "自定义系统提示词，可使用模板",
+              "temperature": "控制回复的创造性，0=严谨，2=发散",
+              "top_p": "控制词汇多样性，较低值更保守",
+              "max_tokens": "单次回复的最大长度",
+              "max_history_messages": "保留的对话历史数量",
+              "web_search": "允许AI搜索互联网获取最新信息"
+            }
+          }
+        }
       }
     },
     "ai_task_data": {
@@ -78,6 +112,28 @@
             "temperature": "控制回复的创造性，0=严谨，2=发散",
             "top_p": "控制词汇多样性，较低值更保守",
             "max_tokens": "单次回复的最大长度"
+          }
+        }
+      },
+      "options": {
+        "step": {
+          "init": {
+            "title": "配置AI任务选项",
+            "description": "自定义AI任务的行为和参数",
+            "data": {
+              "recommended": "推荐模式（使用最佳配置）",
+              "chat_model": "聊天模型",
+              "image_model": "图像生成模型",
+              "temperature": "温度（创造性）",
+              "top_p": "Top P（采样）",
+              "max_tokens": "最大令牌数"
+            },
+            "data_description": {
+              "recommended": "启用后将使用推荐的配置参数",
+              "temperature": "控制回复的创造性，0=严谨，2=发散",
+              "top_p": "控制词汇多样性，较低值更保守",
+              "max_tokens": "单次回复的最大长度"
+            }
           }
         }
       }

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m json.tool:*)",
+      "Bash(/dev/null)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

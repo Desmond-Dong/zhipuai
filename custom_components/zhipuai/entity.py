@@ -31,6 +31,7 @@ from .const import (
     CONF_TEMPERATURE,
     CONF_TOP_K,
     CONF_TOP_P,
+    CONF_WEB_SEARCH,
     DOMAIN,
     ERROR_GETTING_RESPONSE,
     RECOMMENDED_MAX_HISTORY_MESSAGES,
@@ -38,6 +39,7 @@ from .const import (
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_K,
     RECOMMENDED_TOP_P,
+    WEB_SEARCH_TOOL,
     ZHIPUAI_CHAT_URL,
 )
 
@@ -98,12 +100,16 @@ class ZhipuAIBaseLLMEntity(Entity):
         messages = self._convert_chat_log_to_messages(chat_log)
 
         # Add tools if available
-        tools = None
+        tools = []
         if chat_log.llm_api:
-            tools = [
+            tools.extend([
                 self._format_tool(tool, chat_log.llm_api.custom_serializer)
                 for tool in chat_log.llm_api.tools
-            ]
+            ])
+
+        # Add web search tool if enabled
+        if options.get(CONF_WEB_SEARCH, False):
+            tools.append(WEB_SEARCH_TOOL)
 
         # Build request parameters
         request_params = {
