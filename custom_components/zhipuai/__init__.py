@@ -1,89 +1,187 @@
+"""The 智谱清言 integration."""
+
 from __future__ import annotations
+
+import logging
+
+import aiohttp
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.dispatcher import async_dispatcher_send
-from .const import DOMAIN, LOGGER
-from .intents import get_intent_handler, async_setup_intents
-from .services import async_setup_services
-from .web_search import async_setup_web_search
-from .image_gen import async_setup_image_gen
-from .entity_analysis import async_setup_entity_analysis
-from .process_with_ha import async_setup as async_setup_process_with_ha
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import config_entry_flow
 
-PLATFORMS: list[Platform] = [Platform.CONVERSATION, Platform.AI_TASK]
+from .const import DOMAIN, ZHIPUAI_CHAT_URL
 
-class ZhipuAIConfigEntry:
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
-        self.hass = hass
-        self.config_entry = config_entry
-        self.api_key = config_entry.data[CONF_API_KEY]
-        self.options = config_entry.options
-        self._unsub_options_update_listener = None
-        self._cleanup_callbacks = []
-        self.intent_handler = get_intent_handler(hass)
+_LOGGER = logging.getLogger(__name__)
 
-    @property
-    def entry_id(self):
-        return self.config_entry.entry_id
+PLATFORMS = [Platform.CONVERSATION, Platform.AI_TASK]
 
-    @property
-    def title(self):
-        return self.config_entry.title
+type ZhipuAIConfigEntry = ConfigEntry[str]  # Store API key
 
-    async def async_setup(self) -> None:
-        self._unsub_options_update_listener = self.config_entry.add_update_listener(
-            self.async_options_updated
+
+async def async_setup_entry(hass: HomeAssistant, entry: ZhipuAIConfigEntry) -> bool:
+    """Set up 智谱清言 from a config entry."""
+
+    # Validate API key by testing API connection
+    api_key = entry.data[CONF_API_KEY]
+
+    try:
+        # Test the connection with a simple API call
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "GLM-4-Flash",
+            "messages": [{"role": "user", "content": "Hi"}],
+            "max_tokens": 10,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ZHIPUAI_CHAT_URL,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                if response.status == 401:
+                    raise ConfigEntryAuthFailed("Invalid API key")
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise ConfigEntryNotReady(f"API test failed: {error_text}")
+    except aiohttp.ClientError as err:
+        raise ConfigEntryNotReady(f"Failed to connect: {err}") from err
+    except ConfigEntryAuthFailed:
+        raise
+    except Exception as err:
+        raise ConfigEntryNotReady(f"Unexpected error: {err}") from err
+
+    # Store API key in runtime data
+    entry.runtime_data = api_key
+
+    # Forward setup to platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Listen for options updates
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
+
+    return True
+
+
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ZhipuAIConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old entry."""
+    _LOGGER.debug("Migrating configuration from version %s.%s", entry.version, entry.minor_version)
+
+    if entry.version == 1:
+        # Migrate from version 1 to version 2
+        # Version 2 uses subentries for conversation and ai_task
+        new_data = {**entry.data}
+        new_options = {**entry.options}
+
+        # Create default subentries
+        from .const import (
+            CONF_CHAT_MODEL,
+            CONF_LLM_HASS_API,
+            CONF_MAX_TOKENS,
+            CONF_PROMPT,
+            CONF_RECOMMENDED,
+            CONF_TEMPERATURE,
+            CONF_TOP_P,
+            DEFAULT_AI_TASK_NAME,
+            DEFAULT_CONVERSATION_NAME,
+            RECOMMENDED_AI_TASK_MAX_TOKENS,
+            RECOMMENDED_AI_TASK_MODEL,
+            RECOMMENDED_AI_TASK_TEMPERATURE,
+            RECOMMENDED_AI_TASK_TOP_P,
+            RECOMMENDED_CHAT_MODEL,
+            RECOMMENDED_MAX_TOKENS,
+            RECOMMENDED_TEMPERATURE,
+            RECOMMENDED_TOP_P,
+        )
+        from homeassistant.helpers import llm
+
+        # Create conversation subentry from old options
+        conversation_data = {
+            CONF_RECOMMENDED: new_options.get(CONF_RECOMMENDED, True),
+            CONF_CHAT_MODEL: new_options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
+            CONF_TEMPERATURE: new_options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),
+            CONF_TOP_P: new_options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
+            CONF_MAX_TOKENS: new_options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
+            CONF_PROMPT: new_options.get(CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT),
+            CONF_LLM_HASS_API: new_options.get(CONF_LLM_HASS_API, [llm.LLM_API_ASSIST]),
+        }
+
+        # Create AI task subentry with defaults
+        ai_task_data = {
+            CONF_RECOMMENDED: True,
+            CONF_CHAT_MODEL: RECOMMENDED_AI_TASK_MODEL,
+            CONF_TEMPERATURE: RECOMMENDED_AI_TASK_TEMPERATURE,
+            CONF_TOP_P: RECOMMENDED_AI_TASK_TOP_P,
+            CONF_MAX_TOKENS: RECOMMENDED_AI_TASK_MAX_TOKENS,
+        }
+
+        hass.config_entries.async_update_entry(
+            entry,
+            data=new_data,
+            options={},
+            version=2,
+            minor_version=2,
         )
 
-    async def async_unload(self) -> None:
-        if self._unsub_options_update_listener is not None:
-            self._unsub_options_update_listener()
-            self._unsub_options_update_listener = None
-        for cleanup_callback in self._cleanup_callbacks:
-            cleanup_callback()
-        self._cleanup_callbacks.clear()
+        # Add subentries
+        conversation_subentry = config_entry_flow.ConfigSubentry(
+            data=conversation_data,
+            subentry_type="conversation",
+            title=DEFAULT_CONVERSATION_NAME,
+            unique_id=None,
+        )
+        hass.config_entries.async_add_subentry(entry, conversation_subentry)
 
-    def async_on_unload(self, func):
-        self._cleanup_callbacks.append(func)
+        ai_task_subentry = config_entry_flow.ConfigSubentry(
+            data=ai_task_data,
+            subentry_type="ai_task_data",
+            title=DEFAULT_AI_TASK_NAME,
+            unique_id=None,
+        )
+        hass.config_entries.async_add_subentry(entry, ai_task_subentry)
 
-    @callback
-    async def async_options_updated(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.options = entry.options
-        async_dispatcher_send(hass, f"{DOMAIN}_options_updated", entry)
+        _LOGGER.debug("Migration to version %s.%s successful", entry.version, entry.minor_version)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    try:
-        zhipuai_entry = ZhipuAIConfigEntry(hass, entry)
-        await zhipuai_entry.async_setup()
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = zhipuai_entry
+    if entry.version == 2 and entry.minor_version == 1:
+        # Migrate from version 2.1 to 2.2
+        # Update subentry titles to include "智谱"
+        from .const import DEFAULT_AI_TASK_NAME, DEFAULT_CONVERSATION_NAME
 
-        # conversation 平台实体通过平台 setup_entry 注册
+        for subentry in entry.subentries.values():
+            # Update old titles to new format
+            if subentry.subentry_type == "conversation":
+                if subentry.title in ("对话助手", "Conversation Agent"):
+                    hass.config_entries.async_update_subentry(
+                        entry, subentry.subentry_id, title=DEFAULT_CONVERSATION_NAME
+                    )
+            elif subentry.subentry_type == "ai_task_data":
+                if subentry.title in ("AI任务", "AI Task"):
+                    hass.config_entries.async_update_subentry(
+                        entry, subentry.subentry_id, title=DEFAULT_AI_TASK_NAME
+                    )
 
-        unload_services = await async_setup_services(hass)
-        zhipuai_entry.async_on_unload(unload_services)
+        hass.config_entries.async_update_entry(
+            entry,
+            minor_version=2,
+        )
 
-        await async_setup_intents(hass)
-        await async_setup_web_search(hass)
-        await async_setup_image_gen(hass)
-        await async_setup_entity_analysis(hass)
-        await async_setup_process_with_ha(hass)
+        _LOGGER.debug("Migration to version %s.%s successful", entry.version, entry.minor_version)
 
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        return True
-        
-    except Exception as ex:
-        raise ConfigEntryNotReady from ex
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    try:
-        zhipuai_entry = hass.data[DOMAIN].get(entry.entry_id)
-        if zhipuai_entry is not None and hasattr(zhipuai_entry, 'async_unload'):
-            await zhipuai_entry.async_unload()
-    except Exception:
-        pass
-    finally:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unload_ok
+    return True

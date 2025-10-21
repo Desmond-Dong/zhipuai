@@ -1,100 +1,100 @@
-import logging
-LOGGER = logging.getLogger(__name__)
+"""Constants for the 智谱清言 integration."""
 
-DOMAIN = "zhipuai"
-NAME = "config.step.user.data.name"
-DEFAULT_NAME = "智谱清言"
-DEFAULT_CONVERSATION_NAME = "智谱AI对话"
-DEFAULT_AI_TASK_NAME = "智谱AI任务"
-CONF_API_KEY = "api_key"
-CONF_RECOMMENDED = "recommended"
-CONF_PROMPT = "prompt"
-CONF_CHAT_MODEL = "chat_model"
-RECOMMENDED_CHAT_MODEL = "glm-4-flash-250414"
-CONF_MAX_TOKENS = "max_tokens"
-RECOMMENDED_MAX_TOKENS = 250
-CONF_TOP_P = "top_p"
-RECOMMENDED_TOP_P = 0.5
-CONF_REQUEST_TIMEOUT = "request_timeout"
-DEFAULT_REQUEST_TIMEOUT = 30  
-CONF_TEMPERATURE = "temperature"
-RECOMMENDED_TEMPERATURE = 0.3
-CONF_MAX_HISTORY_MESSAGES = "max_history_messages"
-RECOMMENDED_MAX_HISTORY_MESSAGES = 30
+from __future__ import annotations
 
-CONF_MAX_TOOL_ITERATIONS = "max_tool_iterations"
-DEFAULT_MAX_TOOL_ITERATIONS = 20
+from typing import Final
 
+# Domain
+DOMAIN: Final = "zhipuai"
 
-CONF_WEB_SEARCH = "web_search"
-DEFAULT_WEB_SEARCH = True
+# API Configuration
+ZHIPUAI_API_BASE: Final = "https://open.bigmodel.cn/api/paas/v4"
+ZHIPUAI_CHAT_URL: Final = f"{ZHIPUAI_API_BASE}/chat/completions"
+ZHIPUAI_IMAGE_GEN_URL: Final = f"{ZHIPUAI_API_BASE}/images/generations"
+ZHIPUAI_WEB_SEARCH_URL: Final = f"{ZHIPUAI_API_BASE}/web_search"
 
-STATE_READY = "就绪"
-STATE_SPEAKING = "说话中"
-STATE_ERROR = "错误"
+# Timeout
+DEFAULT_REQUEST_TIMEOUT: Final = 30000  # milliseconds
+TIMEOUT_SECONDS: Final = 30
 
-ZHIPUAI_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+# Configuration Keys
+CONF_API_KEY: Final = "api_key"
+CONF_CHAT_MODEL: Final = "chat_model"
+CONF_IMAGE_MODEL: Final = "image_model"
+CONF_MAX_TOKENS: Final = "max_tokens"
+CONF_PROMPT: Final = "prompt"
+CONF_TEMPERATURE: Final = "temperature"
+CONF_TOP_P: Final = "top_p"
+CONF_TOP_K: Final = "top_k"
+CONF_LLM_HASS_API: Final = "llm_hass_api"
+CONF_RECOMMENDED: Final = "recommended"
+CONF_WEB_SEARCH: Final = "web_search"
+CONF_MAX_HISTORY_MESSAGES: Final = "max_history_messages"
 
+# Recommended Values for Conversation
+RECOMMENDED_CHAT_MODEL: Final = "GLM-4-Flash"
+RECOMMENDED_TEMPERATURE: Final = 0.3
+RECOMMENDED_TOP_P: Final = 0.5
+RECOMMENDED_TOP_K: Final = 1
+RECOMMENDED_MAX_TOKENS: Final = 250
+RECOMMENDED_MAX_HISTORY_MESSAGES: Final = 30  # Keep last 30 messages for continuous conversation
 
-DEFAULT_LANGUAGE = "zh-CN"
-DEFAULT_CONVERSATION_MODE = "conversation.mode.add_name"
+# Recommended Values for AI Task
+RECOMMENDED_AI_TASK_MODEL: Final = "GLM-4-Flash"
+RECOMMENDED_AI_TASK_TEMPERATURE: Final = 0.95
+RECOMMENDED_AI_TASK_TOP_P: Final = 0.7
+RECOMMENDED_AI_TASK_MAX_TOKENS: Final = 2000
 
-ERROR_INVALID_AUTH = "API密钥无效或已过期"
-ERROR_TOO_MANY_REQUESTS = "请求过于频繁，请稍后再试"
-ERROR_SERVER_ERROR = "AI服务器暂时不可用，请稍后再试"
-ERROR_TIMEOUT = "请求超时，请稍后再试"
-ERROR_UNKNOWN = "未知错误"
-
-MAX_RETRIES = 3  
-RETRY_DELAY = 1  
-MAX_HISTORY_LENGTH = 10  
-
-ZHIPUAI_WEB_SEARCH_URL = "https://open.bigmodel.cn/api/paas/v4/tools"
-
-CONF_WEB_SEARCH_STREAM = "web_search_stream"
-DEFAULT_WEB_SEARCH_STREAM = False
-
-ZHIPUAI_IMAGE_GEN_URL = "https://open.bigmodel.cn/api/paas/v4/images/generations"
-CONF_IMAGE_GEN = "image_gen"
-DEFAULT_IMAGE_GEN = False
-
-CONF_IMAGE_SIZE = "image_size"
-DEFAULT_IMAGE_SIZE = "1024x1024"
-
-IMAGE_SIZES = [
+# Image Generation
+RECOMMENDED_IMAGE_MODEL: Final = "cogview-3-flash"
+IMAGE_SIZES: Final = [
     "1024x1024",
     "768x1344",
     "864x1152",
     "1344x768",
     "1152x864",
     "1440x720",
-    "720x1440"
+    "720x1440",
 ]
 
+# Available Models
+ZHIPUAI_CHAT_MODELS: Final = [
+    "GLM-4-Flash",
+    "GLM-4-Plus",
+    "GLM-4-Air",
+    "GLM-4-AirX",
+    "GLM-4-Long",
+    "GLM-4-AllTools",
+    "GLM-4-0520",
+    "GLM-4V-Flash",
+    "GLM-4V-Plus",
+    "GLM-Z1-Flash",
+    "GLM-Z1-Air",
+    "GLM-Z1-AirX",
+]
 
-CONF_HISTORY_ANALYSIS = "history_analysis"
-CONF_HISTORY_ENTITIES = "history_entities"
-CONF_HISTORY_DAYS = "history_days"
-CONF_HISTORY_INTERVAL = "history_interval"
-DEFAULT_HISTORY_INTERVAL = 10  
-DEFAULT_HISTORY_ANALYSIS = False
-DEFAULT_HISTORY_DAYS = 1
-MAX_HISTORY_DAYS = 15
+ZHIPUAI_IMAGE_MODELS: Final = [
+    "cogview-3-flash",
+    "cogview-3",
+    "cogview-3-plus",
+]
 
-CONF_PRESENCE_PENALTY = "presence_penalty"
-CONF_FREQUENCY_PENALTY = "frequency_penalty"
-CONF_STOP_SEQUENCES = "stop_sequences"
-CONF_TOOL_CHOICE = "tool_choice"
-CONF_LOGIT_BIAS = "logit_bias"
+# Vision Models (支持图像分析)
+VISION_MODELS: Final = [
+    "GLM-4V-Flash",
+    "GLM-4V-Plus",
+    "GLM-4V",
+]
 
-DEFAULT_PRESENCE_PENALTY = 0.0
-DEFAULT_FREQUENCY_PENALTY = 0.0
-DEFAULT_STOP_SEQUENCES = []
-DEFAULT_TOOL_CHOICE = "auto"
-DEFAULT_LOGIT_BIAS = {}
+# Default Names
+DEFAULT_TITLE: Final = "智谱清言"
+DEFAULT_CONVERSATION_NAME: Final = "智谱对话助手"
+DEFAULT_AI_TASK_NAME: Final = "智谱AI任务"
 
-CONF_FILTER_MARKDOWN = "filter_markdown"
-DEFAULT_FILTER_MARKDOWN = "off"
+# Services
+SERVICE_GENERATE_IMAGE: Final = "generate_image"
 
-CONF_NOTIFY_SERVICE = "notify_service"
-DEFAULT_NOTIFY_SERVICE = "persistent_notification"
+# Error Messages
+ERROR_GETTING_RESPONSE: Final = "获取响应时出错"
+ERROR_INVALID_API_KEY: Final = "API密钥无效"
+ERROR_CANNOT_CONNECT: Final = "无法连接到智谱AI服务"
