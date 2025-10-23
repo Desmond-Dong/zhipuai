@@ -7,8 +7,8 @@
 <p align="center">
   <a href="https://github.com/Desmond-Dong/zhipuai/releases"><img src="https://img.shields.io/github/v/release/knoop7/zhipuai" alt="GitHub Version"></a>
   <a href="https://github.com/Desmond-Dong/zhipuai/issues"><img src="https://img.shields.io/github/issues/knoop7/zhipuai" alt="GitHub Issues"></a>
-  <img src="https://img.shields.io/github/forks/knoop7/zhipuai?style=social" alt="GitHub Forks">
-  <img src="https://img.shields.io/github/stars/knoop7/zhipuai?style=social" alt="GitHub Stars">
+  <img src="https://img.shields.io/github/forks/Desmond-Dong/zhipuai?style=social" alt="GitHub Forks">
+  <img src="https://img.shields.io/github/stars/Desmond-Dong/zhipuai?style=social" alt="GitHub Stars">
 </p>
 
 ---
@@ -53,7 +53,7 @@
 - 重启 Home Assistant。
 
 > ⚠️ **版本兼容：**
-> 本集成依赖 Home Assistant 新版 Conversation / AI Task / 子条目等框架能力，建议使用最新版 Home Assistant。
+> 本集成依赖 Home Assistant 新版 Conversation / AI Task / 子条目等框架能力，建议使用最新版 Home Assistant（> 2025.10.0）。
 
 ---
 
