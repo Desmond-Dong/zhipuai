@@ -39,7 +39,7 @@
       "step": {
         "init": {
           "title": "Configure Conversation Agent",
-          "description": "Customize conversation agent behavior and parameters. Enable recommended mode for best settings, or disable to customize all parameters.",
+          "description": "Customize the behavior and parameters of the conversation agent. Enable recommended mode to use the best settings, or disable it to customize all parameters. After submitting, the configuration information will be switched.",
           "data": {
             "name": "Name",
             "recommended": "Recommended Mode",
@@ -73,7 +73,7 @@
       "step": {
         "init": {
           "title": "Configure AI Task",
-          "description": "Customize AI task behavior and parameters. Enable recommended mode for best settings, or disable to customize all parameters.",
+          "description": "Customize AI task behavior and parameters. Enable recommended mode for best settings, or disable to customize all parameters. After submitting, the configuration information will be switched.",
           "data": {
             "name": "Name",
             "recommended": "Recommended Mode",
