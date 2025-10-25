@@ -2,7 +2,7 @@
   "domain": "zhipuai",
   "name": "智谱清言",
   "after_dependencies": ["assist_pipeline", "intent", "recorder"],
-  "codeowners": ["@knoop7"],
+  "codeowners": ["@knoop7","@Desmond-Dong"],
   "config_flow": true,
   "documentation": "https://github.com/Desmond-Dong/zhipuai",
   "integration_type": "service",
