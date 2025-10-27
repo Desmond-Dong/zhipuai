@@ -67,8 +67,19 @@ class ZhipuAITaskEntity(
         )
 
         # Add image generation support if configured
+        # Enable for: 1) Vision models, 2) Image generation models, 3) Recommended mode
         model = subentry.data.get(CONF_CHAT_MODEL, default_model)
-        if model in VISION_MODELS or "-image" in model.lower():
+        is_recommended = subentry.data.get("recommended", False)
+
+        from .const import ZHIPUAI_IMAGE_MODELS
+
+        if (
+            model in VISION_MODELS
+            or model in ZHIPUAI_IMAGE_MODELS
+            or "-image" in model.lower()
+            or "cogview" in model.lower()
+            or is_recommended  # Always enable in recommended mode
+        ):
             self._attr_supported_features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
 
     async def _async_generate_data(
@@ -158,12 +169,14 @@ class ZhipuAITaskEntity(
         user_message = chat_log.content[-1]
         assert isinstance(user_message, conversation.UserContent)
 
-        # Build request parameters (use default size)
+        # Build request parameters
         request_params = {
             "model": image_model,
             "prompt": user_message.content,
             "size": "1024x1024",  # Default size, ZhipuAI supports various sizes
         }
+
+        _LOGGER.info("Generating image with model: %s, prompt: %s", image_model, user_message.content[:100])
 
         try:
             # Call ZhipuAI image generation API via HTTP
@@ -183,32 +196,75 @@ class ZhipuAITaskEntity(
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
+                        _LOGGER.error("Image generation API failed: %s", error_text)
                         raise HomeAssistantError(f"Image generation failed: {error_text}")
 
                     result = await response.json()
+                    _LOGGER.debug("Image generation response: %s", result)
 
-                    if not result.get("data") or not result["data"][0].get("url"):
-                        raise HomeAssistantError("No image generated")
+                    if not result.get("data") or len(result["data"]) == 0:
+                        raise HomeAssistantError("No image data in response")
 
-                    # Download image from URL
-                    async with session.get(result["data"][0]["url"]) as img_response:
-                        if img_response.status != 200:
-                            raise HomeAssistantError(
-                                f"Failed to download image: {img_response.status}"
-                            )
+                    image_data = result["data"][0]
+                    image_url = image_data.get("url")
 
-                        image_bytes = await img_response.read()
+                    if image_url:
+                        # Download image from URL
+                        _LOGGER.info("Downloading image from URL: %s", image_url)
+                        async with session.get(image_url) as img_response:
+                            if img_response.status != 200:
+                                raise HomeAssistantError(
+                                    f"Failed to download image: {img_response.status}"
+                                )
 
-            # Convert to PNG
-            from PIL import Image
-            image = Image.open(io.BytesIO(image_bytes))
-            png_buffer = io.BytesIO()
-            image.save(png_buffer, format="PNG")
-            png_bytes = png_buffer.getvalue()
+                            image_bytes = await img_response.read()
+                            _LOGGER.info("Successfully downloaded image, size: %d bytes", len(image_bytes))
+                    else:
+                        # Try to get base64 data if URL is not available
+                        b64_json = image_data.get("b64_json")
+                        if b64_json:
+                            _LOGGER.info("Using base64 image data")
+                            import base64
+                            image_bytes = base64.b64decode(b64_json)
+                        else:
+                            raise HomeAssistantError("No image URL or base64 data in response")
+
+            # Convert to PNG for better compatibility
+            try:
+                from PIL import Image
+                image = Image.open(io.BytesIO(image_bytes))
+
+                # Convert to RGB if needed
+                if image.mode in ("RGBA", "LA", "P"):
+                    background = Image.new("RGB", image.size, (255, 255, 255))
+                    if image.mode == "P":
+                        image = image.convert("RGBA")
+                    if image.mode == "RGBA":
+                        background.paste(image, mask=image.split()[-1])
+                    else:
+                        background.paste(image)
+                    image = background
+
+                png_buffer = io.BytesIO()
+                image.save(png_buffer, format="PNG", optimize=True)
+                png_bytes = png_buffer.getvalue()
+                _LOGGER.info("Successfully converted image to PNG, size: %d bytes", len(png_bytes))
+
+            except Exception as img_err:
+                _LOGGER.warning("Failed to convert image to PNG, using original: %s", img_err)
+                png_bytes = image_bytes
+
+            # Add assistant content to chat log
+            chat_log.async_add_assistant_content_without_tools(
+                conversation.AssistantContent(
+                    agent_id=self.entity_id,
+                    content=f"Generated image using {image_model}",
+                )
+            )
 
             return ai_task.GenImageTaskResult(
                 conversation_id=chat_log.conversation_id,
-                image_data=png_bytes,  # Return bytes, not base64 string
+                image_data=png_bytes,
                 mime_type="image/png",
                 model=image_model,
             )

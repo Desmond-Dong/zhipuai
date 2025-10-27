@@ -24,11 +24,15 @@ from .const import (
     CONF_TEMPERATURE,
     DOMAIN,
     ERROR_GETTING_RESPONSE,
+    IMAGE_SIZES,
     RECOMMENDED_IMAGE_ANALYSIS_MODEL,
+    RECOMMENDED_IMAGE_MODEL,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_TEMPERATURE,
     SERVICE_ANALYZE_IMAGE,
+    SERVICE_GENERATE_IMAGE,
     ZHIPUAI_CHAT_URL,
+    ZHIPUAI_IMAGE_GEN_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +46,13 @@ IMAGE_ANALYZER_SCHEMA = {
     vol.Optional("temperature", default=RECOMMENDED_TEMPERATURE): vol.Coerce(float),
     vol.Optional("max_tokens", default=RECOMMENDED_MAX_TOKENS): cv.positive_int,
     vol.Optional("stream", default=False): cv.boolean,
+}
+
+# Schema for image generation service
+IMAGE_GENERATOR_SCHEMA = {
+    vol.Required("prompt"): cv.string,
+    vol.Optional("size", default="1024x1024"): vol.In(IMAGE_SIZES),
+    vol.Optional("model", default=RECOMMENDED_IMAGE_MODEL): cv.string,
 }
 
 
@@ -139,12 +150,86 @@ async def async_setup_services(hass: HomeAssistant, config_entry) -> None:
                 "error": str(err)
             }
 
-    # Register service
+    async def handle_generate_image(call: ServiceCall) -> dict:
+        """Handle image generation service call."""
+        try:
+            prompt = call.data["prompt"]
+            size = call.data.get("size", "1024x1024")
+            model = call.data.get("model", RECOMMENDED_IMAGE_MODEL)
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "size": size,
+            }
+
+            # Make API call
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    ZHIPUAI_IMAGE_GEN_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120),  # Image generation takes longer
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        _LOGGER.error("Image generation API request failed: %s", error_text)
+                        raise HomeAssistantError(f"{ERROR_GETTING_RESPONSE}: {error_text}")
+
+                    result = await response.json()
+
+                    # Process the response based on ZhipuAI's actual API response format
+                    if "data" in result and len(result["data"]) > 0:
+                        image_data = result["data"][0]
+                        image_url = image_data.get("url", "")
+                        if image_url:
+                            return {
+                                "success": True,
+                                "image_url": image_url,
+                                "prompt": prompt,
+                                "size": size,
+                                "model": model,
+                            }
+                        else:
+                            # If base64 image is returned instead of URL
+                            b64_json = image_data.get("b64_json", "")
+                            if b64_json:
+                                return {
+                                    "success": True,
+                                    "image_base64": b64_json,
+                                    "prompt": prompt,
+                                    "size": size,
+                                    "model": model,
+                                }
+
+                    raise HomeAssistantError("无法获取生成的图像")
+
+        except Exception as err:
+            _LOGGER.error("Error generating image: %s", err)
+            return {
+                "success": False,
+                "error": str(err)
+            }
+
+    # Register services
     hass.services.async_register(
         DOMAIN,
         SERVICE_ANALYZE_IMAGE,
         handle_analyze_image,
         schema=vol.Schema(IMAGE_ANALYZER_SCHEMA),
+        supports_response=True
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GENERATE_IMAGE,
+        handle_generate_image,
+        schema=vol.Schema(IMAGE_GENERATOR_SCHEMA),
         supports_response=True
     )
 

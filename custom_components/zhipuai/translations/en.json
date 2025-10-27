@@ -94,6 +94,24 @@
     }
   },
   "services": {
+    "generate_image": {
+      "name": "Generate Image",
+      "description": "Generate image using ZhipuAI CogView model",
+      "fields": {
+        "prompt": {
+          "name": "Prompt",
+          "description": "Describe the image content to generate"
+        },
+        "size": {
+          "name": "Image Size",
+          "description": "Size of the generated image"
+        },
+        "model": {
+          "name": "Model",
+          "description": "Image generation model to use"
+        }
+      }
+    },
     "analyze_image": {
       "name": "Analyze Image",
       "description": "Analyze image content using ZhipuAI",

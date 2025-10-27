@@ -94,6 +94,24 @@
     }
   },
   "services": {
+    "generate_image": {
+      "name": "生成图像",
+      "description": "使用智谱AI CogView模型生成图像",
+      "fields": {
+        "prompt": {
+          "name": "提示词",
+          "description": "描述要生成的图像内容"
+        },
+        "size": {
+          "name": "图像尺寸",
+          "description": "生成图像的尺寸"
+        },
+        "model": {
+          "name": "模型",
+          "description": "使用的图像生成模型"
+        }
+      }
+    },
     "analyze_image": {
       "name": "分析图像",
       "description": "使用智谱AI分析图像内容",
