@@ -2,7 +2,9 @@ name: HACS Action
 
 on:
   push:
-  pull_request:
+    paths-ignore:
+      - '.github/workflows/**'
+
 
 
 jobs:
