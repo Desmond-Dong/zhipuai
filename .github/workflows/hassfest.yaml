@@ -1,12 +1,10 @@
 name: Validate with hassfest
 
 on:
-  release:
-    types: [published]
-  # 仅当推送内容不包含 workflow 文件时才触发本流程（即 workflow 文件有变更时不触发）
   push:
     paths-ignore:
       - '.github/workflows/**'
+
 
 
 
