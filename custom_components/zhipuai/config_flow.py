@@ -14,7 +14,6 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryFlow,
-    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_API_KEY, CONF_NAME
@@ -51,6 +50,7 @@ from .const import (
     RECOMMENDED_AI_TASK_TEMPERATURE,
     RECOMMENDED_AI_TASK_TOP_P,
     RECOMMENDED_CHAT_MODEL,
+    RECOMMENDED_IMAGE_ANALYSIS_MODEL,
     RECOMMENDED_IMAGE_MODEL,
     RECOMMENDED_MAX_HISTORY_MESSAGES,
     RECOMMENDED_MAX_TOKENS,
@@ -179,12 +179,6 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
-    @staticmethod
-    def async_get_options_flow(
-        config_entry: ConfigEntry,
-    ) -> OptionsFlow:
-        """Create the options flow."""
-        return ZhipuAIOptionsFlow()
 
     @classmethod
     def async_get_supported_subentry_types(
@@ -197,53 +191,18 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
 
-class ZhipuAIOptionsFlow(OptionsFlow):
-    """智谱清言 config flow options handler."""
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Manage the options."""
-        # For parent entry, options are managed through subentry configuration
-        # Show information form instead of aborting
-        if user_input is not None:
-            return self.async_abort(reason="configure_via_subentries")
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({}),
-            description_placeholders={
-                "info": "请在集成详情页面中找到对应的子条目（对话助手或AI任务），点击子条目的配置按钮来修改设置。"
-            },
-        )
 
 
 class ZhipuAISubentryFlowHandler(ConfigSubentryFlow):
     """Handle subentry flow for conversation and AI task."""
 
     options: dict[str, Any]
+    last_rendered_recommended: bool = False
 
     @property
     def _is_new(self) -> bool:
         """Return if this is a new subentry."""
         return self.source == "user"
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Handle subentry setup."""
-        if self._subentry_type == "ai_task_data":
-            self.options = RECOMMENDED_AI_TASK_OPTIONS.copy()
-        else:
-            self.options = RECOMMENDED_CONVERSATION_OPTIONS.copy()
-        return await self.async_step_init(user_input)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Handle subentry reconfiguration."""
-        self.options = self._get_reconfigure_subentry().data.copy()
-        return await self.async_step_init(user_input)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -251,16 +210,197 @@ class ZhipuAISubentryFlowHandler(ConfigSubentryFlow):
         """Handle options for subentry."""
         errors: dict[str, str] = {}
 
-        # Get options
-        options = self.options
-        # Get default name
-        if self._is_new:
-            if self._subentry_type == "ai_task_data":
-                default_name = DEFAULT_AI_TASK_NAME
+        if user_input is None:
+            # First render: get current options
+            if self._is_new:
+                if self._subentry_type == "ai_task_data":
+                    self.options = RECOMMENDED_AI_TASK_OPTIONS.copy()
+                else:
+                    self.options = RECOMMENDED_CONVERSATION_OPTIONS.copy()
             else:
-                default_name = DEFAULT_CONVERSATION_NAME
-        else:
-            default_name = self._get_reconfigure_subentry().title
-        # If user_input exists, detect interactive changes (e.g., toggling recommended)        if user_input is not None:            # If recommended value changed (either enabling or disabling), update options and re-render form dynamically            if CONF_RECOMMENDED in user_input and user_input[CONF_RECOMMENDED] != options.get(CONF_RECOMMENDED):                options[CONF_RECOMMENDED] = user_input[CONF_RECOMMENDED]                # If conversation, carry over prompt value when present                if self._subentry_type == "conversation" and CONF_PROMPT in user_input:                    options[CONF_PROMPT] = user_input[CONF_PROMPT]                # Rebuild schema with updated recommended flag and show form immediately                schema = await self._build_schema(options, default_name)                return self.async_show_form(                    step_id="init",                    data_schema=vol.Schema(schema),                    errors=errors,                )            # For conversation, prompt field change alone should just re-render as well            if self._subentry_type == "conversation" and CONF_PROMPT in user_input and (CONF_RECOMMENDED not in user_input or user_input[CONF_RECOMMENDED] == options.get(CONF_RECOMMENDED)):                options[CONF_PROMPT] = user_input.get(CONF_PROMPT, options.get(CONF_PROMPT))                schema = await self._build_schema(options, default_name)                return self.async_show_form(                    step_id="init",                    data_schema=vol.Schema(schema),                    errors=errors,                )            # Otherwise, this is a real submit: set LLM_HASS_API for conversation and create/update entry            if self._subentry_type == "conversation":                user_input[CONF_LLM_HASS_API] = llm.LLM_API_ASSIST            # Update or create subentry            if self._is_new:                return self.async_create_entry(                    title=user_input.pop(CONF_NAME),                    data=user_input,                )            return self.async_update_and_abort(                self._get_entry(),                self._get_reconfigure_subentry(),                data=user_input,            )        # Build schema based on subentry type and recommended mode        schema = await self._build_schema(options, default_name)        return self.async_show_form(            step_id="init",            data_schema=vol.Schema(schema),            errors=errors,        )
+                # If reconfiguration, copy existing options to show current values
+                self.options = self._get_reconfigure_subentry().data.copy()
 
-    async def _build_schema(        self, options: dict[str, Any], default_name: str    ) -> dict:        """Build configuration schema."""        schema: dict[vol.Required | vol.Optional, Any] = {}        # Add name field for new entries        if self._is_new:            schema[vol.Required(CONF_NAME, default=default_name)] = str        # Add recommended mode toggle        schema[            vol.Required(CONF_RECOMMENDED, default=options.get(CONF_RECOMMENDED, True))        ] = bool        recommended = options.get(CONF_RECOMMENDED, True)        # Conversation-specific options        if self._subentry_type == "conversation":            schema.update({                vol.Optional(                    CONF_PROMPT,                    description={"suggested_value": options.get(CONF_PROMPT)},                ): TemplateSelector(),            })        # Show advanced options only in non-recommended mode        if not recommended:            if self._subentry_type == "conversation":                schema.update(self._get_conversation_advanced_schema(options))            else:                schema.update(self._get_ai_task_advanced_schema(options))        return schema    def _get_conversation_advanced_schema(        self, options: dict[str, Any]    ) -> dict:        """Get advanced schema for conversation."""        return {            vol.Optional(                CONF_CHAT_MODEL,                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),            ): SelectSelector(                SelectSelectorConfig(                    options=ZHIPUAI_CHAT_MODELS,                    mode=SelectSelectorMode.DROPDOWN,                )            ),            vol.Optional(                CONF_TEMPERATURE,                default=options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),            ): NumberSelector(                NumberSelectorConfig(                    min=0, max=2, step=0.01, mode=NumberSelectorMode.SLIDER                )            ),            vol.Optional(                CONF_TOP_P,                default=options.get(CONF_TOP_P, RECOMMENDED_TOP_P),            ): NumberSelector(                NumberSelectorConfig(                    min=0, max=1, step=0.01, mode=NumberSelectorMode.SLIDER                )            ),            vol.Optional(                CONF_TOP_K,                default=options.get(CONF_TOP_K, RECOMMENDED_TOP_K),            ): int,            vol.Optional(                CONF_MAX_TOKENS,                default=options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),            ): int,            vol.Optional(                CONF_MAX_HISTORY_MESSAGES,                default=options.get(CONF_MAX_HISTORY_MESSAGES, RECOMMENDED_MAX_HISTORY_MESSAGES),            ): int,            vol.Optional(                CONF_WEB_SEARCH,                default=options.get(CONF_WEB_SEARCH, True),            ): bool,        }    def _get_ai_task_advanced_schema(        self, options: dict[str, Any]    ) -> dict:        """Get advanced schema for AI task."""        return {            vol.Optional(                CONF_CHAT_MODEL,                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_AI_TASK_MODEL),            ): SelectSelector(                SelectSelectorConfig(                    options=ZHIPUAI_CHAT_MODELS,                    mode=SelectSelectorMode.DROPDOWN,                )            ),            vol.Optional(                CONF_IMAGE_MODEL,                default=options.get(CONF_IMAGE_MODEL, RECOMMENDED_IMAGE_MODEL),            ): SelectSelector(                SelectSelectorConfig(                    options=ZHIPUAI_IMAGE_MODELS,                    mode=SelectSelectorMode.DROPDOWN,                )            ),            vol.Optional(                CONF_TEMPERATURE,                default=options.get(CONF_TEMPERATURE, RECOMMENDED_AI_TASK_TEMPERATURE),            ): NumberSelector(                NumberSelectorConfig(                    min=0, max=2, step=0.01, mode=NumberSelectorMode.SLIDER                )            ),            vol.Optional(                CONF_TOP_P,                default=options.get(CONF_TOP_P, RECOMMENDED_AI_TASK_TOP_P),            ): NumberSelector(                NumberSelectorConfig(                    min=0, max=1, step=0.01, mode=NumberSelectorMode.SLIDER                )            ),            vol.Optional(                CONF_MAX_TOKENS,                default=options.get(CONF_MAX_TOKENS, RECOMMENDED_AI_TASK_MAX_TOKENS),            ): int,        }
+            self.last_rendered_recommended = self.options.get(CONF_RECOMMENDED, True)
+
+        else:
+            # Check if recommended mode has changed
+            if user_input[CONF_RECOMMENDED] == self.last_rendered_recommended:
+                # Recommended mode unchanged, save the configuration
+                # Set LLM_HASS_API for conversation
+                if self._subentry_type == "conversation":
+                    user_input[CONF_LLM_HASS_API] = llm.LLM_API_ASSIST
+
+                # Update or create subentry
+                if self._is_new:
+                    return self.async_create_entry(
+                        title=user_input.pop(CONF_NAME),
+                        data=user_input,
+                    )
+
+                return self.async_update_and_abort(
+                    self._get_entry(),
+                    self._get_reconfigure_subentry(),
+                    data=user_input,
+                )
+
+            # Recommended mode changed, re-render form with new options shown/hidden
+            self.last_rendered_recommended = user_input[CONF_RECOMMENDED]
+            self.options.update(user_input)  # Update current options with user input
+
+        # Build schema based on current options
+        schema = await zhipuai_config_option_schema(
+            self._is_new, self._subentry_type, self.options
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async_step_reconfigure = async_step_init
+    async_step_user = async_step_init
+
+
+async def zhipuai_config_option_schema(
+    is_new: bool,
+    subentry_type: str,
+    options: Mapping[str, Any],
+) -> dict:
+    """Return a schema for ZhipuAI completion options."""
+    schema = {}
+
+    # Add name field for new entries
+    if is_new:
+        if CONF_NAME in options:
+            default_name = options[CONF_NAME]
+        elif subentry_type == "ai_task_data":
+            default_name = DEFAULT_AI_TASK_NAME
+        else:
+            default_name = DEFAULT_CONVERSATION_NAME
+        schema[vol.Required(CONF_NAME, default=default_name)] = str
+
+    # Add recommended mode toggle
+    schema[
+        vol.Required(CONF_RECOMMENDED, default=options.get(CONF_RECOMMENDED, True))
+    ] = bool
+
+    # If recommended mode is enabled, only show basic fields
+    if options.get(CONF_RECOMMENDED):
+        # In recommended mode, only show prompt for conversation
+        if subentry_type == "conversation":
+            schema.update({
+                vol.Optional(
+                    CONF_PROMPT,
+                    default=options.get(CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT),
+                    description={"suggested_value": options.get(CONF_PROMPT)},
+                ): TemplateSelector(),
+            })
+        return schema
+
+    # Show advanced options only when not in recommended mode
+    if subentry_type == "conversation":
+        schema.update({
+            vol.Optional(
+                CONF_PROMPT,
+                default=options.get(CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT),
+                description={"suggested_value": options.get(CONF_PROMPT)},
+            ): TemplateSelector(),
+            vol.Optional(
+                CONF_CHAT_MODEL,
+                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
+                description={"suggested_value": options.get(CONF_CHAT_MODEL)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_CHAT_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TEMPERATURE,
+                default=options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),
+                description={"suggested_value": options.get(CONF_TEMPERATURE)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=2, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TOP_P,
+                default=options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
+                description={"suggested_value": options.get(CONF_TOP_P)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=1, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TOP_K,
+                default=options.get(CONF_TOP_K, RECOMMENDED_TOP_K),
+                description={"suggested_value": options.get(CONF_TOP_K)},
+            ): int,
+            vol.Optional(
+                CONF_MAX_TOKENS,
+                default=options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
+                description={"suggested_value": options.get(CONF_MAX_TOKENS)},
+            ): int,
+            vol.Optional(
+                CONF_MAX_HISTORY_MESSAGES,
+                default=options.get(CONF_MAX_HISTORY_MESSAGES, RECOMMENDED_MAX_HISTORY_MESSAGES),
+                description={"suggested_value": options.get(CONF_MAX_HISTORY_MESSAGES)},
+            ): int,
+            vol.Optional(
+                CONF_WEB_SEARCH,
+                default=options.get(CONF_WEB_SEARCH, False),
+                description={"suggested_value": options.get(CONF_WEB_SEARCH)},
+            ): bool,
+        })
+
+    elif subentry_type == "ai_task_data":
+        schema.update({
+            vol.Optional(
+                CONF_CHAT_MODEL,
+                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_AI_TASK_MODEL),
+                description={"suggested_value": options.get(CONF_CHAT_MODEL)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_CHAT_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_IMAGE_MODEL,
+                default=options.get(CONF_IMAGE_MODEL, RECOMMENDED_IMAGE_MODEL),
+                description={"suggested_value": options.get(CONF_IMAGE_MODEL)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_IMAGE_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TEMPERATURE,
+                default=options.get(CONF_TEMPERATURE, RECOMMENDED_AI_TASK_TEMPERATURE),
+                description={"suggested_value": options.get(CONF_TEMPERATURE)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=2, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TOP_P,
+                default=options.get(CONF_TOP_P, RECOMMENDED_AI_TASK_TOP_P),
+                description={"suggested_value": options.get(CONF_TOP_P)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=1, step=0.01, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_MAX_TOKENS,
+                default=options.get(CONF_MAX_TOKENS, RECOMMENDED_AI_TASK_MAX_TOKENS),
+                description={"suggested_value": options.get(CONF_MAX_TOKENS)},
+            ): int,
+        })
+
+    return schema

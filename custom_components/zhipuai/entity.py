@@ -158,10 +158,9 @@ class ZhipuAIBaseLLMEntity(Entity):
             model_name = model_config.get("model", "unknown")
             _LOGGER.info("Sending request to ZhipuAI with model: %s", model_name)
 
-            # Check if model supports vision (glm-4v-flash is free!)
-            vision_models = ["glm-4v-flash", "glm-4v", "glm-4v-plus"]
-            if model_name not in vision_models:
-                _LOGGER.warning("Model %s may not support image analysis. Vision models: %s", model_name, vision_models)
+            # Note: Model vision capability check is not needed here since
+            # we auto-switch to vision models when media attachments are detected
+            # This warning is removed to avoid confusion during model switching
 
             _LOGGER.info("Number of messages: %d", len(messages))
             for i, msg in enumerate(messages):
