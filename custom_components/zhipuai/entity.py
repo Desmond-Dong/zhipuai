@@ -13,7 +13,7 @@ from typing import Any
 import aiohttp
 from voluptuous_openapi import convert
 
-from homeassistant.components import conversation
+from homeassistant.components import conversation, media_source
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant
@@ -34,6 +34,7 @@ from .const import (
     CONF_WEB_SEARCH,
     DOMAIN,
     ERROR_GETTING_RESPONSE,
+    RECOMMENDED_IMAGE_ANALYSIS_MODEL,
     RECOMMENDED_MAX_HISTORY_MESSAGES,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_TEMPERATURE,
@@ -77,13 +78,44 @@ class ZhipuAIBaseLLMEntity(Entity):
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
-    def _get_model_config(self) -> dict[str, Any]:
+    def _get_model_config(self, chat_log: conversation.ChatLog | None = None) -> dict[str, Any]:
         """Get model configuration from options."""
         options = self.subentry.data
+        configured_model = options.get(CONF_CHAT_MODEL, self.default_model)
+
+        # Check if we need to switch to vision model
+        final_model = configured_model
+        if chat_log:
+            # Detect if any content has attachments
+            has_attachments = any(
+                hasattr(content, 'attachments') and content.attachments
+                for content in chat_log.content
+            )
+
+            # Check if attachments contain images/videos
+            has_media_attachments = False
+            if has_attachments:
+                for content in chat_log.content:
+                    if hasattr(content, 'attachments') and content.attachments:
+                        for attachment in content.attachments:
+                            mime_type = getattr(attachment, 'mime_type', '')
+                            if mime_type.startswith(('image/', 'video/')):
+                                has_media_attachments = True
+                                break
+                    if has_media_attachments:
+                        break
+
+            # Auto-switch to vision model if needed (prefer free model!)
+            if has_media_attachments:
+                vision_models = ["glm-4v-flash", "glm-4v", "glm-4v-plus"]
+                if configured_model not in vision_models:
+                    final_model = RECOMMENDED_IMAGE_ANALYSIS_MODEL  # GLM-4V-Flash
+                    _LOGGER.info("Auto-switching to vision model %s for media attachments (original: %s)", final_model, configured_model)
+
+        # Only use parameters that the working service uses (top_p causes API error!)
         return {
-            "model": options.get(CONF_CHAT_MODEL, self.default_model),
+            "model": final_model,
             "temperature": options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),
-            "top_p": options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
             "max_tokens": options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
         }
 
@@ -94,10 +126,10 @@ class ZhipuAIBaseLLMEntity(Entity):
     ) -> None:
         """Generate an answer for the chat log."""
         options = self.subentry.data
-        model_config = self._get_model_config()
+        model_config = self._get_model_config(chat_log)
 
-        # Build messages from chat log
-        messages = self._convert_chat_log_to_messages(chat_log)
+        # Build messages from chat log (attachment processing will be done during conversion)
+        messages = await self._async_convert_chat_log_to_messages(chat_log)
 
         # Add tools if available
         tools = []
@@ -111,9 +143,9 @@ class ZhipuAIBaseLLMEntity(Entity):
         if options.get(CONF_WEB_SEARCH, False):
             tools.append(WEB_SEARCH_TOOL)
 
-        # Build request parameters
+        # Build minimal request parameters using only essential parameters
         request_params = {
-            **model_config,
+            "model": model_config.get("model"),
             "messages": messages,
             "stream": True,
         }
@@ -122,6 +154,44 @@ class ZhipuAIBaseLLMEntity(Entity):
             request_params["tools"] = tools
 
         try:
+            # Debug: Log the request parameters and validate model
+            model_name = model_config.get("model", "unknown")
+            _LOGGER.info("Sending request to ZhipuAI with model: %s", model_name)
+
+            # Check if model supports vision (glm-4v-flash is free!)
+            vision_models = ["glm-4v-flash", "glm-4v", "glm-4v-plus"]
+            if model_name not in vision_models:
+                _LOGGER.warning("Model %s may not support image analysis. Vision models: %s", model_name, vision_models)
+
+            _LOGGER.info("Number of messages: %d", len(messages))
+            for i, msg in enumerate(messages):
+                _LOGGER.info("Message %d: role=%s, content_type=%s", i, msg.get("role"), type(msg.get("content")))
+                if isinstance(msg.get("content"), list):
+                    for j, part in enumerate(msg["content"]):
+                        _LOGGER.info("  Part %d: type=%s", j, part.get("type"))
+                        if part.get("type") == "image_url":
+                            url = part.get("image_url", {}).get("url", "")
+                            _LOGGER.info("    Image URL length: %d", len(url))
+
+            # Debug: Log the full request
+            _LOGGER.info("Full API request parameters: %s", json.dumps(request_params, indent=2, ensure_ascii=False))
+
+            # Additional debugging: Check message structure specifically
+            if messages:
+                first_msg = messages[0]
+                if isinstance(first_msg.get("content"), list):
+                    _LOGGER.info("Message content structure:")
+                    for i, part in enumerate(first_msg["content"]):
+                        _LOGGER.info("  Part %d: %s", i, json.dumps(part, indent=2, ensure_ascii=False))
+                        if part.get("type") == "image_url":
+                            url = part.get("image_url", {}).get("url", "")
+                            if url.startswith("data:image/"):
+                                _LOGGER.info("    Image URL format looks correct (data URI)")
+                            else:
+                                _LOGGER.error("    Image URL format incorrect: %s", url[:100])
+                else:
+                    _LOGGER.info("Message content is simple string: %s", first_msg.get("content", "")[:100])
+
             # Call ZhipuAI API with streaming via HTTP
             headers = {
                 "Authorization": f"Bearer {self._api_key}",
@@ -155,7 +225,7 @@ class ZhipuAIBaseLLMEntity(Entity):
             _LOGGER.error("Error calling ZhipuAI API: %s", err)
             raise HomeAssistantError(ERROR_GETTING_RESPONSE) from err
 
-    def _convert_chat_log_to_messages(
+    async def _async_convert_chat_log_to_messages(
         self, chat_log: conversation.ChatLog
     ) -> list[dict[str, Any]]:
         """Convert chat log to ZhipuAI message format."""
@@ -164,6 +234,17 @@ class ZhipuAIBaseLLMEntity(Entity):
 
         messages = []
 
+        if not chat_log.content:
+            return []
+
+        # For debugging: Check if we have attachments and simplify format
+        last_content = chat_log.content[-1]
+        if last_content.role == "user" and last_content.attachments:
+            _LOGGER.info("Simplifying to single message format with attachments (like working service)")
+            # Only send the last user message with attachments, like the working service
+            return [await self._convert_user_message(last_content)]
+
+        # Standard conversation handling for messages without attachments
         # First message is system message (index 0)
         # History is content[1:-1] (excluding first system and last user input)
         # Last message is current user input (index -1)
@@ -180,7 +261,7 @@ class ZhipuAIBaseLLMEntity(Entity):
         history_messages = []
         for content in history_content:
             if content.role == "user":
-                history_messages.append(self._convert_user_message(content))
+                history_messages.append(await self._convert_user_message(content))
             elif content.role == "assistant":
                 history_messages.append(self._convert_assistant_message(content))
             elif content.role == "tool_result":
@@ -207,18 +288,16 @@ class ZhipuAIBaseLLMEntity(Entity):
         messages.extend(history_messages)
 
         # Add current user input
-        if chat_log.content:
-            last_content = chat_log.content[-1]
-            if last_content.role == "user":
-                messages.append(self._convert_user_message(last_content))
-            elif last_content.role == "assistant":
-                messages.append(self._convert_assistant_message(last_content))
-            elif last_content.role == "tool_result":
-                messages.append(self._convert_tool_message(last_content))
+        if last_content.role == "user":
+            messages.append(await self._convert_user_message(last_content))
+        elif last_content.role == "assistant":
+            messages.append(self._convert_assistant_message(last_content))
+        elif last_content.role == "tool_result":
+            messages.append(self._convert_tool_message(last_content))
 
         return messages
 
-    def _convert_user_message(
+    async def _convert_user_message(
         self, content: conversation.Content
     ) -> dict[str, Any]:
         """Convert user message to ZhipuAI format."""
@@ -226,22 +305,104 @@ class ZhipuAIBaseLLMEntity(Entity):
 
         # Handle text and attachments
         if content.attachments:
-            parts = [{"type": "text", "text": content.content}]
-            for attachment in content.attachments:
+            parts = []
+            successful_images = []
+            _LOGGER.info("Processing %d attachments for user message", len(content.attachments))
+
+            # First, process all attachments and collect successful ones
+            for i, attachment in enumerate(content.attachments):
+                _LOGGER.info("Processing attachment %d: %s", i, attachment)
+
                 if attachment.mime_type and attachment.mime_type.startswith("image/"):
-                    # Add image as base64
                     try:
-                        with open(attachment.path, "rb") as img_file:
-                            img_data = base64.b64encode(img_file.read()).decode()
-                            parts.append({
+                        image_data = None
+                        mime_type = attachment.mime_type
+
+                        # Handle media_content_id - try direct file path first (more reliable)
+                        if hasattr(attachment, 'media_content_id'):
+                            _LOGGER.info("Attachment has media_content_id: %s", attachment.media_content_id)
+                            _LOGGER.info("Attachment attributes: %s", dir(attachment))
+                            # First check if we have a direct file path (most reliable)
+                            if hasattr(attachment, 'path') and attachment.path:
+                                try:
+                                    _LOGGER.info("Reading file directly from path: %s", attachment.path)
+                                    import asyncio
+                                    image_bytes = await asyncio.to_thread(self._read_file_bytes, str(attachment.path))
+                                    image_data = base64.b64encode(image_bytes).decode()
+                                    _LOGGER.info("Successfully read file directly, base64 length: %d", len(image_data))
+                                except Exception as err:
+                                    _LOGGER.error("Failed to read file %s: %s", attachment.path, err, exc_info=True)
+                            else:
+                                # Try media source resolution as fallback
+                                _LOGGER.info("No file path, trying media source resolution for %s", attachment.media_content_id)
+                                try:
+                                    image_bytes = await self._async_get_media_content(
+                                        attachment.media_content_id, mime_type
+                                    )
+                                    if image_bytes:
+                                        image_data = base64.b64encode(image_bytes).decode()
+                                        _LOGGER.info("Successfully resolved media content, base64 length: %d", len(image_data))
+                                    else:
+                                        _LOGGER.warning("Failed to resolve media content for: %s", attachment.media_content_id)
+                                except Exception as err:
+                                    _LOGGER.error("Error resolving media content %s: %s", attachment.media_content_id, err, exc_info=True)
+                        # Check if attachment has resolved content
+                        elif hasattr(attachment, 'content'):
+                            _LOGGER.info("Attachment has resolved content")
+                            # Direct content (bytes)
+                            if isinstance(attachment.content, bytes):
+                                image_data = base64.b64encode(attachment.content).decode()
+                                _LOGGER.info("Converted bytes to base64, length: %d", len(image_data))
+                            elif isinstance(attachment.content, str):
+                                # Already base64 encoded
+                                image_data = attachment.content
+                                _LOGGER.info("Using existing base64 content, length: %d", len(image_data))
+                        elif hasattr(attachment, 'path') and attachment.path:
+                            # Traditional file path (handle asynchronously)
+                            _LOGGER.info("Reading image from path: %s", attachment.path)
+                            try:
+                                import asyncio
+                                image_bytes = await asyncio.to_thread(self._read_file_bytes, str(attachment.path))
+                                image_data = base64.b64encode(image_bytes).decode()
+                            except Exception as err:
+                                _LOGGER.error("Failed to read file %s: %s", attachment.path, err, exc_info=True)
+                        else:
+                            _LOGGER.warning("Attachment format not supported: %s", attachment)
+                            continue
+
+                        if image_data:
+                            # Use image/jpeg like official example (even for PNG images)
+                            successful_images.append({
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:{attachment.mime_type};base64,{img_data}"
+                                    "url": f"data:image/jpeg;base64,{image_data}"
                                 }
                             })
+                            _LOGGER.info("Successfully added image to message parts using official example format (image/jpeg)")
+                        else:
+                            _LOGGER.warning("Could not get image data from attachment: %s", attachment)
+
                     except Exception as err:
-                        _LOGGER.warning("Failed to load image %s: %s", attachment.path, err)
-            message["content"] = parts
+                        _LOGGER.error("Failed to process image attachment %s: %s", attachment, err, exc_info=True)
+                else:
+                    _LOGGER.info("Skipping non-image attachment: %s (mime: %s)", attachment, getattr(attachment, 'mime_type', 'unknown'))
+
+            # Build content EXACTLY like our working services.py
+            if successful_images:
+                # Add images first (like working service)
+                parts.extend(successful_images)
+                # Add text part (like working service)
+                parts.append({
+                    "type": "text",
+                    "text": content.content
+                })
+
+                message["content"] = parts
+                _LOGGER.info("Final message content has %d parts (%d images + text) - EXACTLY like working services.py", len(parts), len(successful_images))
+            else:
+                # No images processed successfully, fall back to text only
+                _LOGGER.warning("No images were processed successfully, falling back to text only")
+                message["content"] = content.content
         else:
             message["content"] = content.content
 
@@ -417,3 +578,144 @@ class ZhipuAIBaseLLMEntity(Entity):
         # This method is no longer needed with HTTP streaming
         for chunk in response:
             yield chunk
+
+    async def _async_download_image_from_url(self, url: str) -> bytes | None:
+        """Download image from URL."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        return await response.read()
+                    else:
+                        _LOGGER.warning("Failed to download image from URL: %s, status: %s", url, response.status)
+                        return None
+        except Exception as err:
+            _LOGGER.warning("Error downloading image from URL %s: %s", url, err)
+            return None
+
+    async def _async_get_media_content(self, media_content_id: str, mime_type: str) -> bytes | None:
+        """Get media content from Home Assistant media source."""
+        _LOGGER.info("Getting media content for ID: %s, mime_type: %s", media_content_id, mime_type)
+
+        try:
+            # Handle media-source:// URLs
+            if media_content_id.startswith("media-source://"):
+                _LOGGER.info("Processing media-source URL: %s", media_content_id)
+
+                if not media_source.is_media_source_id(media_content_id):
+                    _LOGGER.warning("Invalid media source ID: %s", media_content_id)
+                    return None
+
+                # Resolve media source
+                try:
+                    media_item = await media_source.async_resolve_media(
+                        self.hass, media_content_id, self.entity_id
+                    )
+                    _LOGGER.info("Resolved media item: %s", media_item)
+                except Exception as err:
+                    _LOGGER.error("Error resolving media source %s: %s", media_content_id, err, exc_info=True)
+                    return None
+
+                if media_item and hasattr(media_item, 'url') and media_item.url:
+                    # Build full URL if it's a relative path
+                    media_url = media_item.url
+                    if media_url.startswith('/'):
+                        # Get Home Assistant base URL from configuration
+                        try:
+                            if hasattr(self.hass.config, 'external_url') and self.hass.config.external_url:
+                                base_url = self.hass.config.external_url.rstrip('/')
+                                media_url = f"{base_url}{media_url}"
+                            elif hasattr(self.hass.config, 'internal_url') and self.hass.config.internal_url:
+                                base_url = self.hass.config.internal_url.rstrip('/')
+                                media_url = f"{base_url}{media_url}"
+                            else:
+                                # Default to localhost
+                                media_url = f"http://localhost:8123{media_url}"
+                        except Exception as err:
+                            # Fallback to localhost
+                            _LOGGER.warning("Could not get Home Assistant URL, using localhost: %s", err)
+                            media_url = f"http://localhost:8123{media_url}"
+
+                    _LOGGER.info("Media item URL: %s", media_url)
+
+                    # Download the media content using Home Assistant's session
+                    try:
+                        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+                        session = async_get_clientsession(self.hass)
+                        async with session.get(
+                            media_url,
+                            timeout=aiohttp.ClientTimeout(total=30)
+                        ) as response:
+                            _LOGGER.info("Response status: %s", response.status)
+                            if response.status == 200:
+                                content = await response.read()
+                                _LOGGER.info("Successfully downloaded media content, size: %d bytes", len(content))
+                                return content
+                            else:
+                                error_text = await response.text()
+                                _LOGGER.warning(
+                                    "Failed to download media content: %s, status: %s, error: %s",
+                                    media_item.url,
+                                    response.status,
+                                    error_text
+                                )
+                                return None
+                    except Exception as err:
+                        _LOGGER.error("Error downloading media content from %s: %s", media_item.url, err, exc_info=True)
+                        return None
+                else:
+                    _LOGGER.warning("Could not resolve media source or no URL: %s", media_content_id)
+                    _LOGGER.warning("Media item details: %s", media_item)
+                    return None
+
+            # Handle /api/image/serve URLs (Home Assistant image serving)
+            elif media_content_id.startswith("/api/image/serve/") or media_content_id.startswith("api/image/serve/"):
+                # Construct full URL if needed
+                if not media_content_id.startswith("/"):
+                    url = f"/{media_content_id}"
+                else:
+                    url = media_content_id
+
+                _LOGGER.info("Processing serve URL: %s", url)
+
+                # Use Home Assistant's internal API client
+                try:
+                    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+                    session = async_get_clientsession(self.hass)
+                    async with session.get(
+                        url,
+                        timeout=aiohttp.ClientTimeout(total=30)
+                    ) as response:
+                        if response.status == 200:
+                            content = await response.read()
+                            _LOGGER.info("Successfully got served image, size: %d bytes", len(content))
+                            return content
+                        else:
+                            _LOGGER.warning("Failed to get served image: %s, status: %s", url, response.status)
+                            return None
+                except Exception as err:
+                    _LOGGER.error("Error getting served image %s: %s", url, err, exc_info=True)
+                    return None
+
+            # Handle direct URLs
+            elif media_content_id.startswith(("http://", "https://")):
+                _LOGGER.info("Processing direct URL: %s", media_content_id)
+                return await self._async_download_image_from_url(media_content_id)
+
+            else:
+                _LOGGER.warning("Unsupported media content ID format: %s", media_content_id)
+                return None
+
+        except Exception as err:
+            _LOGGER.error("Unexpected error getting media content %s: %s", media_content_id, err, exc_info=True)
+            return None
+
+    def _read_file_bytes(self, file_path: str) -> bytes:
+        """Read file bytes synchronously (to be used with asyncio.to_thread)."""
+        try:
+            with open(file_path, "rb") as f:
+                return f.read()
+        except Exception as err:
+            raise Exception(f"Failed to read file {file_path}: {err}")
+
+    

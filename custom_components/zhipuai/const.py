@@ -45,6 +45,9 @@ RECOMMENDED_AI_TASK_TEMPERATURE: Final = 0.95
 RECOMMENDED_AI_TASK_TOP_P: Final = 0.7
 RECOMMENDED_AI_TASK_MAX_TOKENS: Final = 2000
 
+# Image Analysis
+RECOMMENDED_IMAGE_ANALYSIS_MODEL: Final = "glm-4v-flash"
+
 # Image Generation
 RECOMMENDED_IMAGE_MODEL: Final = "cogview-3-flash"
 IMAGE_SIZES: Final = [
@@ -93,11 +96,11 @@ ZHIPUAI_IMAGE_MODELS: Final = [
 
 ]
 
-# Vision Models (支持图像分析)
+# Vision Models (支持图像分析) - 优先使用免费模型
 VISION_MODELS: Final = [
-    "GLM-4V-Flash",
-    "GLM-4V-Plus",
-    "GLM-4V",
+    "glm-4v-flash",      # GLM-4V-Flash - 免费视觉模型（推荐）
+    "glm-4v",            # GLM-4V - 收费视觉模型
+    "glm-4v-plus",        # GLM-4V-Plus - 收费视觉模型
 ]
 
 # Default Names
@@ -107,6 +110,7 @@ DEFAULT_AI_TASK_NAME: Final = "智谱AI任务"
 
 # Services
 SERVICE_GENERATE_IMAGE: Final = "generate_image"
+SERVICE_ANALYZE_IMAGE: Final = "analyze_image"
 
 # Error Messages
 ERROR_GETTING_RESPONSE: Final = "获取响应时出错"

@@ -36,3 +36,66 @@ generate_image:
             - "cogview-3-flash"
             - "cogview-3"
             - "cogview-3-plus"
+
+analyze_image:
+  name: 分析图像
+  description: 使用智谱AI分析图像内容
+  fields:
+    image_file:
+      name: 图像文件
+      description: 要分析的图像文件路径
+      required: false
+      selector:
+        text:
+    image_entity:
+      name: 图像实体
+      description: 要分析的摄像头实体ID
+      required: false
+      selector:
+        entity:
+          domain: camera
+    message:
+      name: 分析指令
+      description: 告诉AI如何分析这张图像
+      required: true
+      example: "请描述这张图片中的内容"
+      selector:
+        text:
+          multiline: true
+    model:
+      name: 模型
+      description: 使用的图像分析模型
+      required: false
+      default: "glm-4v-flash"
+      selector:
+        select:
+          options:
+            - "glm-4v-flash"
+            - "glm-4v"
+            - "glm-4v-plus"
+    temperature:
+      name: 温度
+      description: 控制输出的随机性，值越高输出越随机
+      required: false
+      default: 0.7
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.1
+    max_tokens:
+      name: 最大令牌数
+      description: 限制回答的最大长度
+      required: false
+      default: 1024
+      selector:
+        number:
+          min: 1
+          max: 4096
+    stream:
+      name: 流式输出
+      description: 是否启用流式输出
+      required: false
+      default: false
+      selector:
+        boolean:

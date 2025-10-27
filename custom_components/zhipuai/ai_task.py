@@ -8,7 +8,6 @@ import logging
 from json import JSONDecodeError, loads as json_loads
 
 import aiohttp
-from PIL import Image
 
 from homeassistant.components import ai_task, conversation
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
@@ -17,11 +16,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_CHAT_MODEL,
     CONF_IMAGE_MODEL,
     ERROR_GETTING_RESPONSE,
     IMAGE_SIZES,
     RECOMMENDED_AI_TASK_MODEL,
     RECOMMENDED_IMAGE_MODEL,
+    RECOMMENDED_IMAGE_ANALYSIS_MODEL,
+    VISION_MODELS,
 )
 from .entity import ZhipuAIBaseLLMEntity
 
@@ -54,14 +56,20 @@ class ZhipuAITaskEntity(
         self, entry: ConfigEntry, subentry: ConfigSubentry
     ) -> None:
         """Initialize the entity."""
-        super().__init__(entry, subentry, RECOMMENDED_AI_TASK_MODEL)
+        # Use vision model as default for better image support
+        default_model = subentry.data.get(CONF_CHAT_MODEL, RECOMMENDED_IMAGE_ANALYSIS_MODEL)
+        super().__init__(entry, subentry, default_model)
 
-        # Supported features
+        # Start with basic features
         self._attr_supported_features = (
             ai_task.AITaskEntityFeature.GENERATE_DATA
             | ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
-            | ai_task.AITaskEntityFeature.GENERATE_IMAGE
         )
+
+        # Add image generation support if configured
+        model = subentry.data.get(CONF_CHAT_MODEL, default_model)
+        if model in VISION_MODELS or "-image" in model.lower():
+            self._attr_supported_features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
 
     async def _async_generate_data(
         self,
@@ -69,10 +77,49 @@ class ZhipuAITaskEntity(
         chat_log: conversation.ChatLog,
     ) -> ai_task.GenDataTaskResult:
         """Handle a generate data task."""
+        # Get the actual model being used (may be auto-switched)
+        from .const import RECOMMENDED_IMAGE_ANALYSIS_MODEL
+        options = self.subentry.data
+        configured_model = options.get(CONF_CHAT_MODEL, self.default_model)
+
+        # Check if we need to auto-switch for attachments
+        has_attachments = any(
+            hasattr(content, 'attachments') and content.attachments
+            for content in chat_log.content
+        )
+
+        final_model = configured_model
+        if has_attachments:
+            vision_models = ["glm-4v-flash", "glm-4v", "glm-4v-plus"]  # Use same priority as entity.py (free model first)
+            # Check if attachments contain media files
+            has_media_attachments = False
+            for content in chat_log.content:
+                if hasattr(content, 'attachments') and content.attachments:
+                    for attachment in content.attachments:
+                        mime_type = getattr(attachment, 'mime_type', '')
+                        if mime_type.startswith(('image/', 'video/')):
+                            has_media_attachments = True
+                            break
+                if has_media_attachments:
+                    break
+
+            if has_media_attachments and configured_model not in vision_models:
+                final_model = RECOMMENDED_IMAGE_ANALYSIS_MODEL  # GLM-4V-Flash
+                _LOGGER.info("Auto-switched AI Task from %s to vision model %s for media attachments", configured_model, final_model)
+
+        _LOGGER.info("AI Task using final model: %s (configured: %s)", final_model, configured_model)
+
         # Process chat log with optional structure
         await self._async_handle_chat_log(chat_log, task.structure)
 
-        # Get the last assistant message
+        # Ensure the last message is from assistant
+        if not isinstance(chat_log.content[-1], conversation.AssistantContent):
+            _LOGGER.error(
+                "Last content in chat log is not an AssistantContent: %s. This could be due to the model not returning a valid response",
+                chat_log.content[-1],
+            )
+            raise HomeAssistantError(ERROR_GETTING_RESPONSE)
+
         text = chat_log.content[-1].content or ""
 
         # If structure is requested, parse as JSON
@@ -80,7 +127,11 @@ class ZhipuAITaskEntity(
             try:
                 data = json_loads(text)
             except JSONDecodeError as err:
-                _LOGGER.error("Failed to parse JSON response: %s", err)
+                _LOGGER.error(
+                    "Failed to parse JSON response: %s. Response: %s",
+                    err,
+                    text,
+                )
                 raise HomeAssistantError(ERROR_GETTING_RESPONSE) from err
 
             return ai_task.GenDataTaskResult(
@@ -105,12 +156,12 @@ class ZhipuAITaskEntity(
 
         # Get user prompt from chat log
         user_message = chat_log.content[-1]
-        prompt = user_message.content
+        assert isinstance(user_message, conversation.UserContent)
 
         # Build request parameters (use default size)
         request_params = {
             "model": image_model,
-            "prompt": prompt,
+            "prompt": user_message.content,
             "size": "1024x1024",  # Default size, ZhipuAI supports various sizes
         }
 
@@ -149,6 +200,7 @@ class ZhipuAITaskEntity(
                         image_bytes = await img_response.read()
 
             # Convert to PNG
+            from PIL import Image
             image = Image.open(io.BytesIO(image_bytes))
             png_buffer = io.BytesIO()
             image.save(png_buffer, format="PNG")

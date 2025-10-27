@@ -64,6 +64,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZhipuAIConfigEntry) -> b
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Set up services
+    from .services import async_setup_services
+    await async_setup_services(hass, entry)
+
     # Listen for options updates
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 

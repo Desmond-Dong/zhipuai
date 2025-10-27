@@ -21,7 +21,7 @@
 
 ---
 
-## 🚀 功能特色
+## 🚀 功能特色 (全免费)
 
 ### 🤖 对话助手（Conversation）
 - **流式输出**：对话内容实时、增量呈现。
@@ -60,7 +60,7 @@
 ## 🛠️ 配置向导（Config Flow）
 
 1. 前往 **设置 → 设备与服务 → 集成 → 添加集成**，搜索“智谱清言（zhipuai）”添加。
-2. 输入 [API Key](https://open.bigmodel.cn/usercenter/apikeys)。
+2. [注册智谱账号](https://www.bigmodel.cn/invite?icode=NWiYEUi2tleEV8cplkb1Z%2BZLO2QH3C0EBTSr%2BArzMw4%3D/)输入 [API Key](https://open.bigmodel.cn/usercenter/apikeys)。
 3. 首次添加会自动生成两个“子条目（subentry）”：
     - 智谱对话助手（conversation）
     - 智谱AI任务（ai_task_data）

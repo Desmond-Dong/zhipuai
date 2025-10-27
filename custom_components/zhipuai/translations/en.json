@@ -92,5 +92,41 @@
         }
       }
     }
+  },
+  "services": {
+    "analyze_image": {
+      "name": "Analyze Image",
+      "description": "Analyze image content using ZhipuAI",
+      "fields": {
+        "image_file": {
+          "name": "Image File",
+          "description": "Path to the image file to analyze"
+        },
+        "image_entity": {
+          "name": "Image Entity",
+          "description": "Camera entity ID to analyze"
+        },
+        "message": {
+          "name": "Analysis Prompt",
+          "description": "Tell AI how to analyze this image"
+        },
+        "model": {
+          "name": "Model",
+          "description": "Image analysis model to use"
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Control output randomness"
+        },
+        "max_tokens": {
+          "name": "Max Tokens",
+          "description": "Limit maximum response length"
+        },
+        "stream": {
+          "name": "Stream Output",
+          "description": "Enable streaming output"
+        }
+      }
+    }
   }
 }
