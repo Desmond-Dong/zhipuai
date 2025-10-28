@@ -9,9 +9,11 @@ from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import intent
 
 from .const import CONF_LLM_HASS_API, CONF_PROMPT, DOMAIN
 from .entity import ZhipuAIBaseLLMEntity
+from .intents import extract_intent_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,6 +82,25 @@ class ZhipuAIConversationEntity(
         """Process a sentence and return a response."""
         options = self.subentry.data
 
+        # 首先尝试进行意图识别
+        try:
+            intent_info = extract_intent_info(user_input.text, self.hass)
+            if intent_info:
+                _LOGGER.debug("Detected intent: %s", intent_info)
+                result = await self._handle_intent(intent_info, user_input)
+                if result:
+                    return result
+        except Exception as e:
+            _LOGGER.debug("Intent detection failed: %s", e)
+
+        # 检查是否是自动化创建请求
+        try:
+            automation_result = await self._handle_automation_request(user_input)
+            if automation_result:
+                return automation_result
+        except Exception as e:
+            _LOGGER.debug("Automation handling failed: %s", e)
+
         try:
             # Provide LLM data (tools, home info, etc.)
             await chat_log.async_provide_llm_data(
@@ -102,3 +123,129 @@ class ZhipuAIConversationEntity(
 
         # Return result from chat log
         return conversation.async_get_result_from_chat_log(user_input, chat_log)
+
+    async def _handle_intent(
+        self,
+        intent_info: dict,
+        user_input: conversation.ConversationInput
+    ) -> conversation.ConversationResult:
+        """Handle recognized intent."""
+        try:
+            from .intents import get_intent_handler
+            intent_handler = get_intent_handler(self.hass)
+
+            # 处理意图
+            result = await intent_handler.handle_intent(intent_info)
+
+            if result.get("success", False):
+                # 创建成功的响应
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_speech(result.get("message", "操作完成"))
+
+                return conversation.ConversationResult(
+                    response=intent_response,
+                    conversation_id=user_input.conversation_id
+                )
+            else:
+                # 创建错误响应
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    result.get("message", "操作失败")
+                )
+
+                return conversation.ConversationResult(
+                    response=intent_response,
+                    conversation_id=user_input.conversation_id
+                )
+
+        except Exception as e:
+            _LOGGER.error("Error handling intent: %s", e)
+            # 返回错误响应
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                f"意图处理失败: {str(e)}"
+            )
+
+            return conversation.ConversationResult(
+                response=intent_response,
+                conversation_id=user_input.conversation_id
+            )
+
+    async def _handle_automation_request(
+        self,
+        user_input: conversation.ConversationInput
+    ) -> Optional[conversation.ConversationResult]:
+        """Handle automation creation requests."""
+        user_text = user_input.text.lower()
+
+        # 检查是否包含自动化相关的关键词
+        automation_keywords = [
+            "创建自动化", "创建一个自动化", "设置自动化", "自动执行",
+            "automation", "create automation", "自动", "定时执行",
+            "当...时候", "如果...就", "当...就", "帮我创建"
+        ]
+
+        if not any(keyword in user_text for keyword in automation_keywords):
+            return None
+
+        try:
+            from .ai_automation import get_automation_manager
+            manager = get_automation_manager(self.hass)
+
+            # 提取自动化描述
+            description = self._extract_automation_description(user_input.text)
+            if not description:
+                return None
+
+            # 创建自动化
+            result = await manager.create_automation_from_description(description)
+
+            # 创建响应
+            intent_response = intent.IntentResponse(language=user_input.language)
+
+            if result.get("success", False):
+                config = result.get("config", {})
+                automation_name = config.get("alias", "新自动化")
+                message = f"我已经为您创建了自动化: {automation_name}"
+
+                # 可以添加更多配置详情
+                if config.get("trigger"):
+                    triggers = [t.get("platform", "unknown") for t in config["trigger"]]
+                    message += f"\\n触发条件: {', '.join(triggers)}"
+
+                intent_response.async_set_speech(message)
+            else:
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    f"创建自动化失败: {result.get('error', '未知错误')}"
+                )
+
+            return conversation.ConversationResult(
+                response=intent_response,
+                conversation_id=user_input.conversation_id
+            )
+
+        except Exception as e:
+            _LOGGER.error("Error handling automation request: %s", e)
+            return None
+
+    def _extract_automation_description(self, user_text: str) -> Optional[str]:
+        """Extract automation description from user input."""
+        # 移除常见的自动化创建前缀
+        prefixes = [
+            "创建自动化", "创建一个自动化", "设置自动化", "帮我创建",
+            "create automation", "automation", "自动", "帮我设置"
+        ]
+
+        description = user_text
+        for prefix in prefixes:
+            if prefix in description:
+                description = description.replace(prefix, "").strip()
+
+        # 如果描述太短或为空，返回None
+        if len(description) < 5:
+            return None
+
+        return description

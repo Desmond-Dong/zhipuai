@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh release list:*)",
+      "Bash(git tag:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

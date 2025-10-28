@@ -99,3 +99,65 @@ analyze_image:
       default: false
       selector:
         boolean:
+
+create_automation:
+  name: 创建自动化
+  description: 通过自然语言描述创建Home Assistant自动化
+  fields:
+    description:
+      name: 自动化描述
+      description: 描述你想要的自动化行为，例如"当检测到有人移动时打开客厅的灯"
+      required: true
+      example: "每天晚上8点自动关闭所有灯光"
+      selector:
+        text:
+          multiline: true
+    name:
+      name: 自动化名称
+      description: 为自动化指定一个名称
+      required: false
+      example: "晚间关灯自动化"
+      selector:
+        text:
+    area_id:
+      name: 区域ID
+      description: 指定自动化相关的区域
+      required: false
+      example: "living_room"
+      selector:
+        text:
+
+get_automation_templates:
+  name: 获取自动化模板
+  description: 获取所有已创建的自动化模板
+
+delete_automation_template:
+  name: 删除自动化模板
+  description: 删除指定的自动化模板
+  fields:
+    template_id:
+      name: 模板ID
+      description: 要删除的模板ID
+      required: true
+      selector:
+        text:
+
+create_dashboard:
+  name: 创建仪表板
+  description: 通过自然语言描述创建Home Assistant仪表板
+  fields:
+    description:
+      name: 仪表板描述
+      description: 描述你想要的仪表板内容和布局
+      required: true
+      example: "创建一个包含温度传感器和灯光控制的主页面仪表板"
+      selector:
+        text:
+          multiline: true
+    dashboard_config:
+      name: 仪表板配置
+      description: 可选的自定义仪表板配置（JSON格式）
+      required: false
+      selector:
+        text:
+          multiline: true
