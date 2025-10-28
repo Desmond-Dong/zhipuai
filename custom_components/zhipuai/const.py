@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Final
+
+# Import llm for API constants
+try:
+    from homeassistant.helpers import llm
+    LLM_API_ASSIST = llm.LLM_API_ASSIST
+    DEFAULT_INSTRUCTIONS_PROMPT = llm.DEFAULT_INSTRUCTIONS_PROMPT
+except ImportError:
+    # Fallback values if llm module is not available
+    LLM_API_ASSIST = "assist"
+    DEFAULT_INSTRUCTIONS_PROMPT = "你是一个有用的AI助手，请根据用户的问题提供准确、有帮助的回答。"
+
+_LOGGER = logging.getLogger(__name__)
+LOGGER = _LOGGER  # 为了向后兼容，提供不带下划线的版本
 
 # Domain
 DOMAIN: Final = "zhipuai"
@@ -12,6 +26,7 @@ ZHIPUAI_API_BASE: Final = "https://open.bigmodel.cn/api/paas/v4"
 ZHIPUAI_CHAT_URL: Final = f"{ZHIPUAI_API_BASE}/chat/completions"
 ZHIPUAI_IMAGE_GEN_URL: Final = f"{ZHIPUAI_API_BASE}/images/generations"
 ZHIPUAI_WEB_SEARCH_URL: Final = f"{ZHIPUAI_API_BASE}/web_search"
+ZHIPUAI_TTS_URL: Final = f"{ZHIPUAI_API_BASE}/audio/speech"
 
 # Timeout
 DEFAULT_REQUEST_TIMEOUT: Final = 30000  # milliseconds
@@ -50,6 +65,36 @@ RECOMMENDED_IMAGE_ANALYSIS_MODEL: Final = "glm-4v-flash"
 
 # Image Generation
 RECOMMENDED_IMAGE_MODEL: Final = "cogview-3-flash"
+
+# TTS Configuration
+RECOMMENDED_TTS_MODEL: Final = "cogtts"
+ZHIPUAI_TTS_MODELS: Final = [
+    "cogtts",  # 智谱 TTS 模型
+]
+
+# TTS Voice Options
+ZHIPUAI_TTS_VOICES: Final = [
+    "female",
+    "male",
+]
+
+# TTS Audio Formats
+ZHIPUAI_TTS_RESPONSE_FORMATS: Final = [
+    "pcm",   # PCM 格式
+]
+
+ZHIPUAI_TTS_ENCODE_FORMATS: Final = [
+    "base64",  # Base64 编码
+    "raw",     # 原始数据
+]
+
+# TTS Default Parameters
+TTS_DEFAULT_VOICE: Final = "female"
+TTS_DEFAULT_RESPONSE_FORMAT: Final = "pcm"
+TTS_DEFAULT_ENCODE_FORMAT: Final = "base64"
+TTS_DEFAULT_SPEED: Final = 1.0
+TTS_DEFAULT_VOLUME: Final = 1.0
+TTS_DEFAULT_STREAM: Final = False
 IMAGE_SIZES: Final = [
     "1024x1024",
     "768x1344",
@@ -107,10 +152,12 @@ VISION_MODELS: Final = [
 DEFAULT_TITLE: Final = "智谱清言"
 DEFAULT_CONVERSATION_NAME: Final = "智谱对话助手"
 DEFAULT_AI_TASK_NAME: Final = "智谱AI任务"
+DEFAULT_TTS_NAME: Final = "智谱TTS语音"
 
 # Services
 SERVICE_GENERATE_IMAGE: Final = "generate_image"
 SERVICE_ANALYZE_IMAGE: Final = "analyze_image"
+SERVICE_TTS_SPEECH: Final = "tts_speech"
 
 # Error Messages
 ERROR_GETTING_RESPONSE: Final = "获取响应时出错"
@@ -124,4 +171,32 @@ WEB_SEARCH_TOOL: Final = {
         "enable": False,
         "search_query": ""
     }
+}
+
+# Recommended Options
+RECOMMENDED_CONVERSATION_OPTIONS: Final = {
+    CONF_RECOMMENDED: True,
+    CONF_LLM_HASS_API: LLM_API_ASSIST,
+    CONF_PROMPT: DEFAULT_INSTRUCTIONS_PROMPT,
+    CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
+    CONF_TEMPERATURE: RECOMMENDED_TEMPERATURE,
+    CONF_TOP_P: RECOMMENDED_TOP_P,
+    CONF_TOP_K: RECOMMENDED_TOP_K,
+    CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS,
+    CONF_MAX_HISTORY_MESSAGES: RECOMMENDED_MAX_HISTORY_MESSAGES,
+    CONF_WEB_SEARCH: False,
+}
+
+RECOMMENDED_AI_TASK_OPTIONS: Final = {
+    CONF_RECOMMENDED: True,
+    CONF_CHAT_MODEL: RECOMMENDED_AI_TASK_MODEL,
+    CONF_TEMPERATURE: RECOMMENDED_AI_TASK_TEMPERATURE,
+    CONF_TOP_P: RECOMMENDED_AI_TASK_TOP_P,
+    CONF_MAX_TOKENS: RECOMMENDED_AI_TASK_MAX_TOKENS,
+    CONF_IMAGE_MODEL: RECOMMENDED_IMAGE_MODEL,
+}
+
+RECOMMENDED_TTS_OPTIONS: Final = {
+    CONF_RECOMMENDED: True,
+    CONF_CHAT_MODEL: RECOMMENDED_TTS_MODEL,
 }

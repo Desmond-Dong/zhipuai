@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
 import logging
 import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -19,9 +21,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_API_KEY,
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
     CONF_TEMPERATURE,
+    DEFAULT_REQUEST_TIMEOUT,
     DOMAIN,
     ERROR_GETTING_RESPONSE,
     IMAGE_SIZES,
@@ -31,8 +35,19 @@ from .const import (
     RECOMMENDED_TEMPERATURE,
     SERVICE_ANALYZE_IMAGE,
     SERVICE_GENERATE_IMAGE,
+    SERVICE_TTS_SPEECH,
+    TTS_DEFAULT_ENCODE_FORMAT,
+    TTS_DEFAULT_RESPONSE_FORMAT,
+    TTS_DEFAULT_SPEED,
+    TTS_DEFAULT_STREAM,
+    TTS_DEFAULT_VOICE,
+    TTS_DEFAULT_VOLUME,
     ZHIPUAI_CHAT_URL,
     ZHIPUAI_IMAGE_GEN_URL,
+    ZHIPUAI_TTS_URL,
+    ZHIPUAI_TTS_ENCODE_FORMATS,
+    ZHIPUAI_TTS_RESPONSE_FORMATS,
+    ZHIPUAI_TTS_VOICES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +68,18 @@ IMAGE_GENERATOR_SCHEMA = {
     vol.Required("prompt"): cv.string,
     vol.Optional("size", default="1024x1024"): vol.In(IMAGE_SIZES),
     vol.Optional("model", default=RECOMMENDED_IMAGE_MODEL): cv.string,
+}
+
+# Schema for TTS service
+TTS_SCHEMA = {
+    vol.Required("text"): cv.string,
+    vol.Optional("voice", default=TTS_DEFAULT_VOICE): vol.In(ZHIPUAI_TTS_VOICES),
+    vol.Optional("speed", default=TTS_DEFAULT_SPEED): vol.Coerce(float),
+    vol.Optional("volume", default=TTS_DEFAULT_VOLUME): vol.Coerce(float),
+    vol.Optional("response_format", default=TTS_DEFAULT_RESPONSE_FORMAT): vol.In(ZHIPUAI_TTS_RESPONSE_FORMATS),
+    vol.Optional("encode_format", default=TTS_DEFAULT_ENCODE_FORMAT): vol.In(ZHIPUAI_TTS_ENCODE_FORMATS),
+    vol.Optional("stream", default=TTS_DEFAULT_STREAM): cv.boolean,
+    vol.Optional("media_player_entity"): cv.entity_id,
 }
 
 
@@ -216,6 +243,179 @@ async def async_setup_services(hass: HomeAssistant, config_entry) -> None:
                 "error": str(err)
             }
 
+    async def handle_tts_speech(call: ServiceCall) -> dict:
+        """Handle TTS service call."""
+        try:
+            text = call.data["text"]
+            voice = call.data.get("voice", TTS_DEFAULT_VOICE)
+            speed = float(call.data.get("speed", TTS_DEFAULT_SPEED))
+            volume = float(call.data.get("volume", TTS_DEFAULT_VOLUME))
+            response_format = call.data.get("response_format", TTS_DEFAULT_RESPONSE_FORMAT)
+            encode_format = call.data.get("encode_format", TTS_DEFAULT_ENCODE_FORMAT)
+            stream = call.data.get("stream", TTS_DEFAULT_STREAM)
+            media_player_entity = call.data.get("media_player_entity")
+
+            # 验证参数
+            if not text or not text.strip():
+                raise ServiceValidationError("文本内容不能为空")
+
+            if voice not in ZHIPUAI_TTS_VOICES:
+                raise ServiceValidationError(f"不支持的语音类型: {voice}")
+
+            if response_format not in ZHIPUAI_TTS_RESPONSE_FORMATS:
+                raise ServiceValidationError(f"不支持的响应格式: {response_format}")
+
+            if encode_format not in ZHIPUAI_TTS_ENCODE_FORMATS:
+                raise ServiceValidationError(f"不支持的编码格式: {encode_format}")
+
+            if not 0.25 <= speed <= 4.0:
+                raise ServiceValidationError("语速必须在 0.25 到 4.0 之间")
+
+            if not 0.1 <= volume <= 2.0:
+                raise ServiceValidationError("音量必须在 0.1 到 2.0 之间")
+
+            # 构建 TTS API 请求
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+
+            payload = {
+                "model": "cogtts",
+                "input": text,
+                "voice": voice,
+                "response_format": response_format,
+                "encode_format": encode_format,
+                "stream": stream,
+                "speed": speed,
+                "volume": volume,
+            }
+
+            timeout = aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT / 1000)
+
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    ZHIPUAI_TTS_URL,
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        _LOGGER.error(
+                            "智谱AI TTS API 错误: %s - %s",
+                            response.status,
+                            error_text
+                        )
+                        return {
+                            "success": False,
+                            "error": f"TTS API 请求失败: {response.status}"
+                        }
+
+                    if stream:
+                        # 处理流式响应
+                        response_text = await response.text()
+                        from .helpers import parse_streaming_response, combine_audio_chunks
+
+                        audio_chunks = parse_streaming_response(response_text)
+
+                        if not audio_chunks:
+                            return {"success": False, "error": "未从流式响应中获取到音频数据"}
+
+                        # 合并音频块
+                        combined_audio = audio_chunks[0]  # 对于 TTS，通常第一个块就包含完整数据
+
+                        # 如果有多个块，尝试合并
+                        if len(audio_chunks) > 1:
+                            try:
+                                combined_audio = combine_audio_chunks(audio_chunks)
+                            except Exception as exc:
+                                _LOGGER.warning("音频合并失败，使用第一个音频块: %s", exc)
+
+                        audio_base64 = combined_audio
+                    else:
+                        # 处理非流式响应
+                        response_data = await response.json()
+
+                        if "choices" not in response_data or not response_data["choices"]:
+                            return {"success": False, "error": "API 响应格式错误"}
+
+                        # 从非流式响应中提取音频数据
+                        choice = response_data["choices"][0]
+                        if "audio" in choice:
+                            audio_base64 = choice["audio"]["content"]
+                        elif "message" in choice and "content" in choice["message"]:
+                            audio_base64 = choice["message"]["content"]
+                        else:
+                            return {"success": False, "error": "无法从响应中提取音频数据"}
+
+                    # 解码音频为 WAV 格式
+                    from .helpers import decode_base64_audio
+                    wav_audio_data = decode_base64_audio(audio_base64)
+
+                    # 如果指定了媒体播放器实体，直接播放
+                    if media_player_entity:
+                        try:
+                            # 将音频数据保存为临时文件
+                            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                                temp_file.write(wav_audio_data)
+                                temp_file_path = temp_file.name
+
+                            # 调用媒体播放器的播放服务
+                            await hass.services.async_call(
+                                "media_player",
+                                "play_media",
+                                {
+                                    "entity_id": media_player_entity,
+                                    "media_content_id": f"file://{temp_file_path}",
+                                    "media_content_type": "audio/wav",
+                                },
+                                blocking=True,
+                            )
+
+                            # 延迟删除临时文件
+                            await asyncio.sleep(1)
+                            try:
+                                os.unlink(temp_file_path)
+                            except OSError:
+                                pass  # 文件可能已被系统删除
+
+                            return {
+                                "success": True,
+                                "message": "语音播放成功",
+                                "media_player": media_player_entity,
+                            }
+
+                        except Exception as exc:
+                            _LOGGER.error("媒体播放失败: %s", exc)
+                            return {
+                                "success": False,
+                                "error": f"媒体播放失败: {exc}",
+                                "audio_data": audio_base64,
+                            }
+
+                    # 返回音频数据供其他用途
+                    return {
+                        "success": True,
+                        "audio_data": audio_base64,
+                        "audio_format": "wav",
+                        "voice": voice,
+                        "speed": speed,
+                        "volume": volume,
+                    }
+
+        except ServiceValidationError as exc:
+            _LOGGER.error("TTS service validation error: %s", exc)
+            return {"success": False, "error": str(exc)}
+        except aiohttp.ClientError as exc:
+            _LOGGER.error("TTS service network error: %s", exc)
+            return {"success": False, "error": f"网络请求失败: {exc}"}
+        except asyncio.TimeoutError as exc:
+            _LOGGER.error("TTS service timeout: %s", exc)
+            return {"success": False, "error": "请求超时"}
+        except Exception as exc:
+            _LOGGER.error("TTS service error: %s", exc, exc_info=True)
+            return {"success": False, "error": f"TTS 生成失败: {exc}"}
+
     # Register services
     hass.services.async_register(
         DOMAIN,
@@ -230,6 +430,14 @@ async def async_setup_services(hass: HomeAssistant, config_entry) -> None:
         SERVICE_GENERATE_IMAGE,
         handle_generate_image,
         schema=vol.Schema(IMAGE_GENERATOR_SCHEMA),
+        supports_response=True
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_TTS_SPEECH,
+        handle_tts_speech,
+        schema=vol.Schema(TTS_SCHEMA),
         supports_response=True
     )
 

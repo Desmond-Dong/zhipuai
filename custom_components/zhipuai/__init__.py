@@ -10,13 +10,24 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.helpers import config_entry_flow
+from types import MappingProxyType
 
-from .const import DOMAIN, ZHIPUAI_CHAT_URL
+from .const import (
+    DEFAULT_AI_TASK_NAME,
+    DEFAULT_CONVERSATION_NAME,
+    DEFAULT_TTS_NAME,
+    DOMAIN,
+    RECOMMENDED_AI_TASK_OPTIONS,
+    RECOMMENDED_CONVERSATION_OPTIONS,
+    RECOMMENDED_TTS_OPTIONS,
+    ZHIPUAI_CHAT_URL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.CONVERSATION, Platform.AI_TASK]
+PLATFORMS = [Platform.CONVERSATION, Platform.AI_TASK, Platform.TTS]
 
 type ZhipuAIConfigEntry = ConfigEntry[str]  # Store API key
 
@@ -60,6 +71,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZhipuAIConfigEntry) -> b
 
     # Store API key in runtime data
     entry.runtime_data = api_key
+
+    # Add TTS subentry if it doesn't exist
+    if not any(subentry.subentry_type == "tts" for subentry in entry.subentries.values()):
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=MappingProxyType(RECOMMENDED_TTS_OPTIONS),
+                subentry_type="tts",
+                title=DEFAULT_TTS_NAME,
+                unique_id=None,
+            ),
+        )
 
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

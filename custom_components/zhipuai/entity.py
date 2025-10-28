@@ -717,4 +717,36 @@ class ZhipuAIBaseLLMEntity(Entity):
         except Exception as err:
             raise Exception(f"Failed to read file {file_path}: {err}")
 
+
+class ZhipuAIEntityBase(Entity):
+    """Base entity for 智谱清言 integration."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        entry: config_entry_flow.ConfigEntry,
+        subentry: config_entry_flow.ConfigSubentry,
+        default_model: str,
+    ) -> None:
+        """Initialize the entity."""
+        self.entry = entry
+        self.subentry = subentry
+        self.default_model = default_model
+        self._attr_unique_id = subentry.subentry_id
+        self._attr_name = subentry.title
+
+        # Get API key from runtime data
+        self._api_key = entry.runtime_data
+
+        # Device info
+        self._attr_device_info = dr.DeviceInfo(
+            identifiers={(DOMAIN, subentry.subentry_id)},
+            name=subentry.title,
+            manufacturer="智谱AI",
+            model=subentry.data.get(CONF_CHAT_MODEL, default_model),
+            entry_type=dr.DeviceEntryType.SERVICE,
+        )
+
     
