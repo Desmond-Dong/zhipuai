@@ -91,6 +91,66 @@
           }
         }
       }
+    },
+    "tts": {
+      "initiate_flow": {
+        "user": "Add TTS Voice",
+        "reconfigure": "Reconfigure TTS Voice"
+      },
+      "entry_type": "ZhipuAI TTS Voice",
+      "step": {
+        "init": {
+          "title": "Configure TTS Voice",
+          "description": "Customize text-to-speech parameters. Enable recommended mode to use the best settings, or disable it to customize all parameters.",
+          "data": {
+            "name": "Name",
+            "recommended": "Recommended Mode",
+            "chat_model": "TTS Model",
+            "tts_voice": "Voice Type",
+            "tts_speed": "Speed",
+            "tts_volume": "Volume",
+            "tts_response_format": "Response Format",
+            "tts_encode_format": "Encode Format",
+            "tts_stream": "Stream Output"
+          },
+          "data_description": {
+            "recommended": "Use recommended settings",
+            "tts_voice": "Select voice: Yongxi, Xiuyi, Catherine, Emma, Aaron, Brian, Daniel, Edward",
+            "tts_speed": "Speech playback speed, 0.25=very slow, 4.0=very fast",
+            "tts_volume": "Speech volume, 0.1=very low, 2.0=very loud",
+            "tts_response_format": "Audio file format: pcm or wav",
+            "tts_encode_format": "Audio encoding method: base64 or raw",
+            "tts_stream": "Enable streaming audio output"
+          }
+        }
+      }
+    },
+    "stt": {
+      "initiate_flow": {
+        "user": "Add STT Voice",
+        "reconfigure": "Reconfigure STT Voice"
+      },
+      "entry_type": "ZhipuAI STT Voice",
+      "step": {
+        "init": {
+          "title": "Configure STT Voice",
+          "description": "Customize speech-to-text parameters. Enable recommended mode to use the best settings, or disable it to customize all parameters.",
+          "data": {
+            "name": "Name",
+            "recommended": "Recommended Mode",
+            "chat_model": "STT Model",
+            "stt_temperature": "Temperature Parameter",
+            "stt_language": "Language",
+            "stt_stream": "Stream Output"
+          },
+          "data_description": {
+            "recommended": "Use recommended settings",
+            "stt_temperature": "Control transcription accuracy, lower values are more accurate",
+            "stt_language": "Select audio language type",
+            "stt_stream": "Enable streaming transcription output"
+          }
+        }
+      }
     }
   },
   "services": {
@@ -143,6 +203,70 @@
         "stream": {
           "name": "Stream Output",
           "description": "Enable streaming output"
+        }
+      }
+    },
+    "tts_speech": {
+      "name": "TTS Speech Synthesis",
+      "description": "Convert text to speech using ZhipuAI",
+      "fields": {
+        "text": {
+          "name": "Text",
+          "description": "Text content to convert to speech"
+        },
+        "voice": {
+          "name": "Voice Type",
+          "description": "Select voice: female or male"
+        },
+        "speed": {
+          "name": "Speed",
+          "description": "Speech playback speed, 0.25=very slow, 4.0=very fast"
+        },
+        "volume": {
+          "name": "Volume",
+          "description": "Speech volume, 0.1=very low, 2.0=very loud"
+        },
+        "response_format": {
+          "name": "Response Format",
+          "description": "Audio file format: pcm or wav"
+        },
+        "encode_format": {
+          "name": "Encode Format",
+          "description": "Audio encoding method: base64 or raw"
+        },
+        "stream": {
+          "name": "Stream Output",
+          "description": "Enable streaming audio output"
+        },
+        "media_player_entity": {
+          "name": "Media Player",
+          "description": "Media player entity to play speech"
+        }
+      }
+    },
+    "stt_transcribe": {
+      "name": "STT Speech Transcription",
+      "description": "Convert speech to text using ZhipuAI",
+      "fields": {
+        "audio_file": {
+          "name": "Audio File",
+          "description": "Path to audio file to transcribe"
+        },
+        "model": {
+          "name": "STT Model",
+          "description": "Speech recognition model to use"
+        },
+        "temperature": {
+          "name": "Temperature Parameter",
+          "description": "Control transcription accuracy, lower values are more accurate"
+        },
+        "language": {
+          "name": "Language",
+          "description": "Audio language type"
+        },
+        "stream": {
+          "name": "Stream Output",
+          "description": "Enable streaming transcription output"
         }
       }
     }

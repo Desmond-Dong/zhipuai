@@ -91,6 +91,66 @@
           }
         }
       }
+    },
+    "tts": {
+      "initiate_flow": {
+        "user": "添加TTS语音",
+        "reconfigure": "重新配置TTS语音"
+      },
+      "entry_type": "智谱TTS语音",
+      "step": {
+        "init": {
+          "title": "配置TTS语音",
+          "description": "自定义文本转语音的参数。开启推荐模式将使用最佳配置，关闭后可自定义所有参数。",
+          "data": {
+            "name": "名称",
+            "recommended": "推荐模式（使用最佳配置）",
+            "chat_model": "TTS模型",
+            "tts_voice": "语音类型",
+            "tts_speed": "语速",
+            "tts_volume": "音量",
+            "tts_response_format": "响应格式",
+            "tts_encode_format": "编码格式",
+            "tts_stream": "流式输出"
+          },
+          "data_description": {
+            "recommended": "启用后将使用推荐的配置参数",
+            "tts_voice": "选择语音类型：女声或男声",
+            "tts_speed": "语音播放速度，0.25=很慢，4.0=很快",
+            "tts_volume": "语音音量，0.1=很小，2.0=很大",
+            "tts_response_format": "音频文件格式",
+            "tts_encode_format": "音频编码方式",
+            "tts_stream": "是否启用流式音频输出"
+          }
+        }
+      }
+    },
+    "stt": {
+      "initiate_flow": {
+        "user": "添加STT语音",
+        "reconfigure": "重新配置STT语音"
+      },
+      "entry_type": "智谱STT语音",
+      "step": {
+        "init": {
+          "title": "配置STT语音",
+          "description": "自定义语音转文本的参数。开启推荐模式将使用最佳配置，关闭后可自定义所有参数。",
+          "data": {
+            "name": "名称",
+            "recommended": "推荐模式（使用最佳配置）",
+            "chat_model": "STT模型",
+            "stt_temperature": "温度参数",
+            "stt_language": "语言",
+            "stt_stream": "流式输出"
+          },
+          "data_description": {
+            "recommended": "启用后将使用推荐的配置参数",
+            "stt_temperature": "控制转录的准确性，较低值更准确",
+            "stt_language": "选择音频的语言类型",
+            "stt_stream": "是否启用流式转录输出"
+          }
+        }
+      }
     }
   },
   "services": {
@@ -143,6 +203,70 @@
         "stream": {
           "name": "流式输出",
           "description": "是否启用流式输出"
+        }
+      }
+    },
+    "tts_speech": {
+      "name": "TTS语音合成",
+      "description": "使用智谱AI将文本转换为语音",
+      "fields": {
+        "text": {
+          "name": "文本",
+          "description": "要转换为语音的文本内容"
+        },
+        "voice": {
+          "name": "语音类型",
+          "description": "选择语音：女声或男声"
+        },
+        "speed": {
+          "name": "语速",
+          "description": "语音播放速度，0.25=很慢，4.0=很快"
+        },
+        "volume": {
+          "name": "音量",
+          "description": "语音音量，0.1=很小，2.0=很大"
+        },
+        "response_format": {
+          "name": "响应格式",
+          "description": "音频文件格式：pcm或wav"
+        },
+        "encode_format": {
+          "name": "编码格式",
+          "description": "音频编码方式：base64或raw"
+        },
+        "stream": {
+          "name": "流式输出",
+          "description": "是否启用流式音频输出"
+        },
+        "media_player_entity": {
+          "name": "媒体播放器",
+          "description": "指定播放语音的媒体播放器实体"
+        }
+      }
+    },
+    "stt_transcribe": {
+      "name": "STT语音转录",
+      "description": "使用智谱AI将语音转换为文本",
+      "fields": {
+        "audio_file": {
+          "name": "音频文件",
+          "description": "要转录的音频文件路径"
+        },
+        "model": {
+          "name": "STT模型",
+          "description": "使用的语音识别模型"
+        },
+        "temperature": {
+          "name": "温度参数",
+          "description": "控制转录的准确性，较低值更准确"
+        },
+        "language": {
+          "name": "语言",
+          "description": "音频的语言类型"
+        },
+        "stream": {
+          "name": "流式输出",
+          "description": "是否启用流式转录输出"
         }
       }
     }

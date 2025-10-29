@@ -24,6 +24,10 @@ from .const import (
     CONF_API_KEY,
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
+    CONF_STT_FILE,
+    CONF_STT_LANGUAGE,
+    CONF_STT_STREAM,
+    CONF_STT_TEMPERATURE,
     CONF_TEMPERATURE,
     DEFAULT_REQUEST_TIMEOUT,
     DOMAIN,
@@ -32,10 +36,16 @@ from .const import (
     RECOMMENDED_IMAGE_ANALYSIS_MODEL,
     RECOMMENDED_IMAGE_MODEL,
     RECOMMENDED_MAX_TOKENS,
+    RECOMMENDED_STT_MODEL,
     RECOMMENDED_TEMPERATURE,
     SERVICE_ANALYZE_IMAGE,
     SERVICE_GENERATE_IMAGE,
     SERVICE_TTS_SPEECH,
+    SERVICE_STT_TRANSCRIBE,
+    STT_DEFAULT_STREAM,
+    STT_DEFAULT_TEMPERATURE,
+    STT_MAX_FILE_SIZE_MB,
+    STT_MAX_DURATION_SECONDS,
     TTS_DEFAULT_ENCODE_FORMAT,
     TTS_DEFAULT_RESPONSE_FORMAT,
     TTS_DEFAULT_SPEED,
@@ -44,6 +54,9 @@ from .const import (
     TTS_DEFAULT_VOLUME,
     ZHIPUAI_CHAT_URL,
     ZHIPUAI_IMAGE_GEN_URL,
+    ZHIPUAI_STT_AUDIO_FORMATS,
+    ZHIPUAI_STT_MODELS,
+    ZHIPUAI_STT_URL,
     ZHIPUAI_TTS_URL,
     ZHIPUAI_TTS_ENCODE_FORMATS,
     ZHIPUAI_TTS_RESPONSE_FORMATS,
@@ -80,6 +93,15 @@ TTS_SCHEMA = {
     vol.Optional("encode_format", default=TTS_DEFAULT_ENCODE_FORMAT): vol.In(ZHIPUAI_TTS_ENCODE_FORMATS),
     vol.Optional("stream", default=TTS_DEFAULT_STREAM): cv.boolean,
     vol.Optional("media_player_entity"): cv.entity_id,
+}
+
+# Schema for STT service
+STT_SCHEMA = {
+    vol.Required(CONF_STT_FILE): cv.string,
+    vol.Optional("model", default=RECOMMENDED_STT_MODEL): vol.In(ZHIPUAI_STT_MODELS),
+    vol.Optional(CONF_STT_TEMPERATURE, default=STT_DEFAULT_TEMPERATURE): vol.Coerce(float),
+    vol.Optional(CONF_STT_LANGUAGE, default="zh"): cv.string,
+    vol.Optional(CONF_STT_STREAM, default=STT_DEFAULT_STREAM): cv.boolean,
 }
 
 
@@ -416,6 +438,138 @@ async def async_setup_services(hass: HomeAssistant, config_entry) -> None:
             _LOGGER.error("TTS service error: %s", exc, exc_info=True)
             return {"success": False, "error": f"TTS 生成失败: {exc}"}
 
+    async def handle_stt_transcribe(call: ServiceCall) -> dict:
+        """Handle STT service call."""
+        try:
+            audio_file = call.data[CONF_STT_FILE]
+            model = call.data.get("model", RECOMMENDED_STT_MODEL)
+            temperature = float(call.data.get(CONF_STT_TEMPERATURE, STT_DEFAULT_TEMPERATURE))
+            language = call.data.get(CONF_STT_LANGUAGE, "zh")
+            stream = call.data.get(CONF_STT_STREAM, STT_DEFAULT_STREAM)
+
+            # 验证参数
+            if not audio_file or not audio_file.strip():
+                raise ServiceValidationError("音频文件路径不能为空")
+
+            if model not in ZHIPUAI_STT_MODELS:
+                raise ServiceValidationError(f"不支持的模型: {model}")
+
+            # 加载音频文件
+            try:
+                # 处理相对路径
+                if not os.path.isabs(audio_file):
+                    audio_file = os.path.join(hass.config.config_dir, audio_file)
+
+                if not os.path.exists(audio_file):
+                    raise ServiceValidationError(f"音频文件不存在: {audio_file}")
+
+                if os.path.isdir(audio_file):
+                    raise ServiceValidationError(f"提供的路径是一个目录: {audio_file}")
+
+                # 检查文件大小
+                file_size = os.path.getsize(audio_file)
+                if file_size > STT_MAX_FILE_SIZE_MB * 1024 * 1024:
+                    raise ServiceValidationError(f"音频文件过大，最大支持 {STT_MAX_FILE_SIZE_MB}MB")
+
+                # 检查文件格式
+                file_ext = os.path.splitext(audio_file)[1].lower().lstrip('.')
+                if file_ext not in ZHIPUAI_STT_AUDIO_FORMATS:
+                    raise ServiceValidationError(f"不支持的音频格式: {file_ext}，支持的格式: {', '.join(ZHIPUAI_STT_AUDIO_FORMATS)}")
+
+                # 读取音频文件
+                with open(audio_file, "rb") as f:
+                    audio_data = f.read()
+
+            except IOError as err:
+                raise ServiceValidationError(f"读取音频文件失败: {err}")
+
+            # 构建 STT API 请求
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+            }
+
+            # 准备文件上传
+            form_data = aiohttp.FormData()
+            form_data.add_field(
+                "file",
+                audio_data,
+                filename=os.path.basename(audio_file),
+                content_type=f"audio/{file_ext}"
+            )
+            form_data.add_field("model", model)
+            form_data.add_field("temperature", str(temperature))
+            form_data.add_field("stream", str(stream).lower())
+
+            timeout = aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT / 1000)
+
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    ZHIPUAI_STT_URL,
+                    headers=headers,
+                    data=form_data
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        _LOGGER.error(
+                            "智谱AI STT API 错误: %s - %s",
+                            response.status,
+                            error_text
+                        )
+                        return {
+                            "success": False,
+                            "error": f"STT API 请求失败: {response.status}"
+                        }
+
+                    if stream:
+                        # 处理流式响应
+                        full_text = ""
+                        async for line in response.content:
+                            if line:
+                                line_text = line.decode('utf-8').strip()
+                                if line_text.startswith('data: '):
+                                    try:
+                                        data_str = line_text[6:]  # Remove 'data: ' prefix
+                                        data_dict = json.loads(data_str)
+
+                                        if "text" in data_dict:
+                                            full_text += data_dict["text"]
+                                    except (json.JSONDecodeError, KeyError) as exc:
+                                        _LOGGER.warning("解析流式响应失败: %s", exc)
+                                        continue
+
+                        transcribed_text = full_text.strip()
+                    else:
+                        # 处理非流式响应
+                        response_data = await response.json()
+
+                        if "text" not in response_data:
+                            _LOGGER.error("STT API 响应格式错误: %s", response_data)
+                            return {"success": False, "error": "API 响应格式错误"}
+
+                        transcribed_text = response_data["text"]
+
+                    return {
+                        "success": True,
+                        "text": transcribed_text,
+                        "model": model,
+                        "language": language,
+                        "audio_file": audio_file,
+                        "file_size_mb": round(file_size / (1024 * 1024), 2),
+                    }
+
+        except ServiceValidationError as exc:
+            _LOGGER.error("STT service validation error: %s", exc)
+            return {"success": False, "error": str(exc)}
+        except aiohttp.ClientError as exc:
+            _LOGGER.error("STT service network error: %s", exc)
+            return {"success": False, "error": f"网络请求失败: {exc}"}
+        except asyncio.TimeoutError as exc:
+            _LOGGER.error("STT service timeout: %s", exc)
+            return {"success": False, "error": "请求超时"}
+        except Exception as exc:
+            _LOGGER.error("STT service error: %s", exc, exc_info=True)
+            return {"success": False, "error": f"STT 转录失败: {exc}"}
+
     # Register services
     hass.services.async_register(
         DOMAIN,
@@ -438,6 +592,14 @@ async def async_setup_services(hass: HomeAssistant, config_entry) -> None:
         SERVICE_TTS_SPEECH,
         handle_tts_speech,
         schema=vol.Schema(TTS_SCHEMA),
+        supports_response=True
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_STT_TRANSCRIBE,
+        handle_stt_transcribe,
+        schema=vol.Schema(STT_SCHEMA),
         supports_response=True
     )
 

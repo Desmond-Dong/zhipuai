@@ -25,6 +25,12 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import (
     CONF_API_KEY,
     CONF_CHAT_MODEL,
+    CONF_TTS_VOICE,
+    CONF_TTS_SPEED,
+    CONF_TTS_VOLUME,
+    CONF_TTS_RESPONSE_FORMAT,
+    CONF_TTS_ENCODE_FORMAT,
+    CONF_TTS_STREAM,
     DEFAULT_REQUEST_TIMEOUT,
     LOGGER,
     RECOMMENDED_TTS_MODEL,
@@ -34,6 +40,10 @@ from .const import (
     TTS_DEFAULT_STREAM,
     TTS_DEFAULT_VOICE,
     TTS_DEFAULT_VOLUME,
+    TTS_SPEED_MAX,
+    TTS_SPEED_MIN,
+    TTS_VOLUME_MAX,
+    TTS_VOLUME_MIN,
     ZHIPUAI_TTS_ENCODE_FORMATS,
     ZHIPUAI_TTS_MODELS,
     ZHIPUAI_TTS_RESPONSE_FORMATS,
@@ -84,8 +94,14 @@ class ZhipuaiTextToSpeechEntity(TextToSpeechEntity, ZhipuAIEntityBase):
 
     # 支持的语音
     _supported_voices = [
-        Voice(voice_id, voice_id.title())
-        for voice_id in ZHIPUAI_TTS_VOICES
+        Voice("yongxi", "勇熙"),
+        Voice("xiuyi", "叙怡"),
+        Voice("catherine", "凯瑟琳"),
+        Voice("emma", "艾玛"),
+        Voice("aaron", "亚伦"),
+        Voice("brian", "布莱恩"),
+        Voice("daniel", "丹尼尔"),
+        Voice("edward", "爱德华"),
     ]
 
     def __init__(self, config_entry: ConfigEntry, subentry: ConfigSubentry) -> None:
@@ -118,12 +134,12 @@ class ZhipuaiTextToSpeechEntity(TextToSpeechEntity, ZhipuAIEntityBase):
             raise HomeAssistantError("文本内容不能为空")
 
         # 获取参数
-        voice = options.get(ATTR_VOICE, TTS_DEFAULT_VOICE)
-        speed = float(options.get("speed", TTS_DEFAULT_SPEED))
-        volume = float(options.get("volume", TTS_DEFAULT_VOLUME))
-        response_format = options.get("response_format", TTS_DEFAULT_RESPONSE_FORMAT)
-        encode_format = options.get("encode_format", TTS_DEFAULT_ENCODE_FORMAT)
-        stream = options.get("stream", TTS_DEFAULT_STREAM)
+        voice = options.get(ATTR_VOICE, options.get(CONF_TTS_VOICE, TTS_DEFAULT_VOICE))
+        speed = float(options.get("speed", options.get(CONF_TTS_SPEED, TTS_DEFAULT_SPEED)))
+        volume = float(options.get("volume", options.get(CONF_TTS_VOLUME, TTS_DEFAULT_VOLUME)))
+        response_format = options.get("response_format", options.get(CONF_TTS_RESPONSE_FORMAT, TTS_DEFAULT_RESPONSE_FORMAT))
+        encode_format = options.get("encode_format", options.get(CONF_TTS_ENCODE_FORMAT, TTS_DEFAULT_ENCODE_FORMAT))
+        stream = options.get("stream", options.get(CONF_TTS_STREAM, TTS_DEFAULT_STREAM))
 
         # 验证参数
         if voice not in ZHIPUAI_TTS_VOICES:
@@ -135,11 +151,11 @@ class ZhipuaiTextToSpeechEntity(TextToSpeechEntity, ZhipuAIEntityBase):
         if encode_format not in ZHIPUAI_TTS_ENCODE_FORMATS:
             raise HomeAssistantError(f"不支持的编码格式: {encode_format}")
 
-        if not 0.25 <= speed <= 4.0:
-            raise HomeAssistantError("语速必须在 0.25 到 4.0 之间")
+        if not TTS_SPEED_MIN <= speed <= TTS_SPEED_MAX:
+            raise HomeAssistantError(f"语速必须在 {TTS_SPEED_MIN} 到 {TTS_SPEED_MAX} 之间")
 
-        if not 0.1 <= volume <= 2.0:
-            raise HomeAssistantError("音量必须在 0.1 到 2.0 之间")
+        if not TTS_VOLUME_MIN <= volume <= TTS_VOLUME_MAX:
+            raise HomeAssistantError(f"音量必须在 {TTS_VOLUME_MIN} 到 {TTS_VOLUME_MAX} 之间")
 
         # 构建请求
         headers = {

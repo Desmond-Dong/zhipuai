@@ -27,6 +27,7 @@ ZHIPUAI_CHAT_URL: Final = f"{ZHIPUAI_API_BASE}/chat/completions"
 ZHIPUAI_IMAGE_GEN_URL: Final = f"{ZHIPUAI_API_BASE}/images/generations"
 ZHIPUAI_WEB_SEARCH_URL: Final = f"{ZHIPUAI_API_BASE}/web_search"
 ZHIPUAI_TTS_URL: Final = f"{ZHIPUAI_API_BASE}/audio/speech"
+ZHIPUAI_STT_URL: Final = f"{ZHIPUAI_API_BASE}/audio/transcriptions"
 
 # Timeout
 DEFAULT_REQUEST_TIMEOUT: Final = 30000  # milliseconds
@@ -72,29 +73,86 @@ ZHIPUAI_TTS_MODELS: Final = [
     "cogtts",  # 智谱 TTS 模型
 ]
 
+# STT Configuration
+RECOMMENDED_STT_MODEL: Final = "glm-asr"
+ZHIPUAI_STT_MODELS: Final = [
+    "glm-asr",  # 智谱 STT 模型
+]
+
 # TTS Voice Options
 ZHIPUAI_TTS_VOICES: Final = [
-    "female",
-    "male",
+    "yongxi",      # 勇熙 - 女声
+    "xiuyi",       # 叙怡 - 女声
+    "catherine",   # 凯瑟琳 - 女声
+    "emma",        # 艾玛 - 女声
+    "aaron",       # 亚伦 - 男声
+    "brian",       # 布莱恩 - 男声
+    "daniel",      # 丹尼尔 - 男声
+    "edward",      # 爱德华 - 男声
 ]
 
 # TTS Audio Formats
 ZHIPUAI_TTS_RESPONSE_FORMATS: Final = [
-    "pcm",   # PCM 格式
+    "pcm",     # PCM 格式 (默认)
+    "wav",     # WAV 格式
 ]
 
 ZHIPUAI_TTS_ENCODE_FORMATS: Final = [
-    "base64",  # Base64 编码
+    "base64",  # Base64 编码 (默认)
     "raw",     # 原始数据
 ]
 
+# TTS Configuration Keys
+CONF_TTS_VOICE: Final = "tts_voice"
+CONF_TTS_SPEED: Final = "tts_speed"
+CONF_TTS_VOLUME: Final = "tts_volume"
+CONF_TTS_RESPONSE_FORMAT: Final = "tts_response_format"
+CONF_TTS_ENCODE_FORMAT: Final = "tts_encode_format"
+CONF_TTS_STREAM: Final = "tts_stream"
+
 # TTS Default Parameters
-TTS_DEFAULT_VOICE: Final = "female"
+TTS_DEFAULT_VOICE: Final = "yongxi"  # 默认使用勇熙女声
 TTS_DEFAULT_RESPONSE_FORMAT: Final = "pcm"
 TTS_DEFAULT_ENCODE_FORMAT: Final = "base64"
 TTS_DEFAULT_SPEED: Final = 1.0
 TTS_DEFAULT_VOLUME: Final = 1.0
 TTS_DEFAULT_STREAM: Final = False
+
+# TTS Parameter Ranges
+TTS_SPEED_MIN: Final = 0.25
+TTS_SPEED_MAX: Final = 4.0
+TTS_SPEED_STEP: Final = 0.1
+
+TTS_VOLUME_MIN: Final = 0.1
+TTS_VOLUME_MAX: Final = 2.0
+TTS_VOLUME_STEP: Final = 0.1
+
+# STT Configuration
+# STT Configuration Keys
+CONF_STT_FILE: Final = "audio_file"
+CONF_STT_MODEL: Final = "stt_model"
+CONF_STT_TEMPERATURE: Final = "stt_temperature"
+CONF_STT_LANGUAGE: Final = "stt_language"
+CONF_STT_STREAM: Final = "stt_stream"
+
+# STT Default Parameters
+STT_DEFAULT_TEMPERATURE: Final = 0.95
+STT_DEFAULT_STREAM: Final = False
+
+# STT Parameter Ranges
+STT_TEMPERATURE_MIN: Final = 0.0
+STT_TEMPERATURE_MAX: Final = 1.0
+STT_TEMPERATURE_STEP: Final = 0.05
+
+# STT Audio Formats
+ZHIPUAI_STT_AUDIO_FORMATS: Final = [
+    "wav",  # WAV 格式
+    "mp3",  # MP3 格式
+]
+
+# STT File Size Limits
+STT_MAX_FILE_SIZE_MB: Final = 25  # 最大文件大小 25MB
+STT_MAX_DURATION_SECONDS: Final = 60  # 最大时长 60秒
 IMAGE_SIZES: Final = [
     "1024x1024",
     "768x1344",
@@ -153,11 +211,13 @@ DEFAULT_TITLE: Final = "智谱清言"
 DEFAULT_CONVERSATION_NAME: Final = "智谱对话助手"
 DEFAULT_AI_TASK_NAME: Final = "智谱AI任务"
 DEFAULT_TTS_NAME: Final = "智谱TTS语音"
+DEFAULT_STT_NAME: Final = "智谱STT语音"
 
 # Services
 SERVICE_GENERATE_IMAGE: Final = "generate_image"
 SERVICE_ANALYZE_IMAGE: Final = "analyze_image"
 SERVICE_TTS_SPEECH: Final = "tts_speech"
+SERVICE_STT_TRANSCRIBE: Final = "stt_transcribe"
 
 # Error Messages
 ERROR_GETTING_RESPONSE: Final = "获取响应时出错"
@@ -199,4 +259,18 @@ RECOMMENDED_AI_TASK_OPTIONS: Final = {
 RECOMMENDED_TTS_OPTIONS: Final = {
     CONF_RECOMMENDED: True,
     CONF_CHAT_MODEL: RECOMMENDED_TTS_MODEL,
+    CONF_TTS_VOICE: TTS_DEFAULT_VOICE,
+    CONF_TTS_SPEED: TTS_DEFAULT_SPEED,
+    CONF_TTS_VOLUME: TTS_DEFAULT_VOLUME,
+    CONF_TTS_RESPONSE_FORMAT: TTS_DEFAULT_RESPONSE_FORMAT,
+    CONF_TTS_ENCODE_FORMAT: TTS_DEFAULT_ENCODE_FORMAT,
+    CONF_TTS_STREAM: TTS_DEFAULT_STREAM,
+}
+
+RECOMMENDED_STT_OPTIONS: Final = {
+    CONF_RECOMMENDED: True,
+    CONF_CHAT_MODEL: RECOMMENDED_STT_MODEL,
+    CONF_STT_TEMPERATURE: STT_DEFAULT_TEMPERATURE,
+    CONF_STT_LANGUAGE: "zh",  # 默认中文
+    CONF_STT_STREAM: STT_DEFAULT_STREAM,
 }

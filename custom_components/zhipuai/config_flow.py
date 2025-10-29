@@ -41,6 +41,12 @@ from .const import (
     CONF_TOP_K,
     CONF_TOP_P,
     CONF_WEB_SEARCH,
+    CONF_TTS_VOICE,
+    CONF_TTS_SPEED,
+    CONF_TTS_VOLUME,
+    CONF_TTS_RESPONSE_FORMAT,
+    CONF_TTS_ENCODE_FORMAT,
+    CONF_TTS_STREAM,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_TITLE,
@@ -58,12 +64,41 @@ from .const import (
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_K,
     RECOMMENDED_TOP_P,
+    TTS_DEFAULT_ENCODE_FORMAT,
+    TTS_DEFAULT_RESPONSE_FORMAT,
+    TTS_DEFAULT_SPEED,
+    TTS_DEFAULT_STREAM,
+    TTS_DEFAULT_VOICE,
+    TTS_DEFAULT_VOLUME,
+    TTS_SPEED_MAX,
+    TTS_SPEED_MIN,
+    TTS_SPEED_STEP,
+    TTS_VOLUME_MAX,
+    TTS_VOLUME_MIN,
+    TTS_VOLUME_STEP,
     ZHIPUAI_CHAT_MODELS,
     ZHIPUAI_CHAT_URL,
     ZHIPUAI_IMAGE_MODELS,
+    ZHIPUAI_TTS_ENCODE_FORMATS,
+    ZHIPUAI_TTS_RESPONSE_FORMATS,
+    ZHIPUAI_TTS_VOICES,
     RECOMMENDED_CONVERSATION_OPTIONS,
     RECOMMENDED_AI_TASK_OPTIONS,
+    RECOMMENDED_STT_OPTIONS,
     RECOMMENDED_TTS_OPTIONS,
+    RECOMMENDED_TTS_MODEL,
+    RECOMMENDED_STT_MODEL,
+    DEFAULT_STT_NAME,
+    CONF_STT_MODEL,
+    CONF_STT_TEMPERATURE,
+    CONF_STT_LANGUAGE,
+    CONF_STT_STREAM,
+    STT_DEFAULT_TEMPERATURE,
+    STT_DEFAULT_STREAM,
+    STT_TEMPERATURE_MAX,
+    STT_TEMPERATURE_MIN,
+    STT_TEMPERATURE_STEP,
+    ZHIPUAI_STT_MODELS,
     )
 
 _LOGGER = logging.getLogger(__name__)
@@ -167,6 +202,8 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
         return {
             "conversation": ZhipuAISubentryFlowHandler,
             "ai_task_data": ZhipuAISubentryFlowHandler,
+            "tts": ZhipuAISubentryFlowHandler,
+            "stt": ZhipuAISubentryFlowHandler,
         }
 
 
@@ -194,6 +231,10 @@ class ZhipuAISubentryFlowHandler(ConfigSubentryFlow):
             if self._is_new:
                 if self._subentry_type == "ai_task_data":
                     self.options = RECOMMENDED_AI_TASK_OPTIONS.copy()
+                elif self._subentry_type == "tts":
+                    self.options = RECOMMENDED_TTS_OPTIONS.copy()
+                elif self._subentry_type == "stt":
+                    self.options = RECOMMENDED_STT_OPTIONS.copy()
                 else:
                     self.options = RECOMMENDED_CONVERSATION_OPTIONS.copy()
             else:
@@ -247,6 +288,9 @@ async def zhipuai_config_option_schema(
     options: Mapping[str, Any],
 ) -> dict:
     """Return a schema for ZhipuAI completion options."""
+    # 确保所有需要的常量都在作用域内
+    global RECOMMENDED_TTS_MODEL, RECOMMENDED_TTS_OPTIONS, RECOMMENDED_STT_MODEL, RECOMMENDED_STT_OPTIONS, TTS_DEFAULT_VOICE, STT_DEFAULT_TEMPERATURE
+
     schema = {}
 
     # Add name field for new entries
@@ -255,6 +299,10 @@ async def zhipuai_config_option_schema(
             default_name = options[CONF_NAME]
         elif subentry_type == "ai_task_data":
             default_name = DEFAULT_AI_TASK_NAME
+        elif subentry_type == "tts":
+            default_name = DEFAULT_TTS_NAME
+        elif subentry_type == "stt":
+            default_name = DEFAULT_STT_NAME
         else:
             default_name = DEFAULT_CONVERSATION_NAME
         schema[vol.Required(CONF_NAME, default=default_name)] = str
@@ -275,6 +323,12 @@ async def zhipuai_config_option_schema(
                     description={"suggested_value": options.get(CONF_PROMPT)},
                 ): TemplateSelector(),
             })
+        elif subentry_type == "tts":
+            # In recommended mode, no configuration options needed
+            pass
+        elif subentry_type == "stt":
+            # In recommended mode, no configuration options needed
+            pass
         return schema
 
     # Show advanced options only when not in recommended mode
@@ -380,6 +434,112 @@ async def zhipuai_config_option_schema(
                 default=options.get(CONF_MAX_TOKENS, RECOMMENDED_AI_TASK_MAX_TOKENS),
                 description={"suggested_value": options.get(CONF_MAX_TOKENS)},
             ): int,
+        })
+
+    elif subentry_type == "tts":
+        schema.update({
+            vol.Optional(
+                CONF_CHAT_MODEL,
+                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_TTS_MODEL),
+                description={"suggested_value": options.get(CONF_CHAT_MODEL)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[RECOMMENDED_TTS_MODEL],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TTS_VOICE,
+                default=options.get(CONF_TTS_VOICE, TTS_DEFAULT_VOICE),
+                description={"suggested_value": options.get(CONF_TTS_VOICE)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_TTS_VOICES,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TTS_SPEED,
+                default=options.get(CONF_TTS_SPEED, TTS_DEFAULT_SPEED),
+                description={"suggested_value": options.get(CONF_TTS_SPEED)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=TTS_SPEED_MIN, max=TTS_SPEED_MAX,
+                    step=TTS_SPEED_STEP, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TTS_VOLUME,
+                default=options.get(CONF_TTS_VOLUME, TTS_DEFAULT_VOLUME),
+                description={"suggested_value": options.get(CONF_TTS_VOLUME)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=TTS_VOLUME_MIN, max=TTS_VOLUME_MAX,
+                    step=TTS_VOLUME_STEP, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_TTS_RESPONSE_FORMAT,
+                default=options.get(CONF_TTS_RESPONSE_FORMAT, TTS_DEFAULT_RESPONSE_FORMAT),
+                description={"suggested_value": options.get(CONF_TTS_RESPONSE_FORMAT)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_TTS_RESPONSE_FORMATS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TTS_ENCODE_FORMAT,
+                default=options.get(CONF_TTS_ENCODE_FORMAT, TTS_DEFAULT_ENCODE_FORMAT),
+                description={"suggested_value": options.get(CONF_TTS_ENCODE_FORMAT)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=ZHIPUAI_TTS_ENCODE_FORMATS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_TTS_STREAM,
+                default=options.get(CONF_TTS_STREAM, TTS_DEFAULT_STREAM),
+                description={"suggested_value": options.get(CONF_TTS_STREAM)},
+            ): bool,
+        })
+
+    elif subentry_type == "stt":
+        schema.update({
+            vol.Optional(
+                CONF_CHAT_MODEL,
+                default=options.get(CONF_CHAT_MODEL, RECOMMENDED_STT_MODEL),
+                description={"suggested_value": options.get(CONF_CHAT_MODEL)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[RECOMMENDED_STT_MODEL],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_STT_TEMPERATURE,
+                default=options.get(CONF_STT_TEMPERATURE, STT_DEFAULT_TEMPERATURE),
+                description={"suggested_value": options.get(CONF_STT_TEMPERATURE)},
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=STT_TEMPERATURE_MIN, max=STT_TEMPERATURE_MAX,
+                    step=STT_TEMPERATURE_STEP, mode=NumberSelectorMode.SLIDER
+                )
+            ),
+            vol.Optional(
+                CONF_STT_LANGUAGE,
+                default=options.get(CONF_STT_LANGUAGE, "zh"),
+                description={"suggested_value": options.get(CONF_STT_LANGUAGE)},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        {"value": "zh", "label": "中文"},
+                        {"value": "en", "label": "English"},
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
         })
 
     return schema
