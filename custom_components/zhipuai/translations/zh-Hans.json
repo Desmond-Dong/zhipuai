@@ -115,7 +115,7 @@
           },
           "data_description": {
             "recommended": "使用推荐配置",
-            "tts_voice": "选择音色：勇熙、叙怡、凯瑟琳、艾玛、亚伦、布莱恩、丹尼尔、爱德华",
+            "tts_voice": "选择音色：彤彤、小陈、锤锤、jam、kazi、douji、luodo",
             "tts_speed": "语音播放速度，0.25=很慢，4.0=很快",
             "tts_volume": "语音音量，0.1=很小，2.0=很大",
             "tts_response_format": "音频文件格式：pcm或wav",

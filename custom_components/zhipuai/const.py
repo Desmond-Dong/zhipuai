@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Final
 
+from homeassistant.core import HomeAssistant
+
 # Import llm for API constants
 try:
     from homeassistant.helpers import llm
@@ -17,6 +19,19 @@ except ImportError:
 
 _LOGGER = logging.getLogger(__name__)
 LOGGER = _LOGGER  # 为了向后兼容，提供不带下划线的版本
+
+
+def get_localized_name(hass: HomeAssistant, zh_name: str, en_name: str) -> str:
+    """根据Home Assistant语言设置返回本地化名称."""
+    language = hass.config.language
+
+    # 中文语言代码列表
+    chinese_languages = ["zh", "zh-cn", "zh-hans", "zh-hant", "zh-tw", "zh-hk"]
+
+    if language and language.lower() in chinese_languages:
+        return zh_name
+    else:
+        return en_name
 
 # Domain
 DOMAIN: Final = "zhipuai"
@@ -81,14 +96,13 @@ ZHIPUAI_STT_MODELS: Final = [
 
 # TTS Voice Options
 ZHIPUAI_TTS_VOICES: Final = [
-    "yongxi",      # 勇熙 - 女声
-    "xiuyi",       # 叙怡 - 女声
-    "catherine",   # 凯瑟琳 - 女声
-    "emma",        # 艾玛 - 女声
-    "aaron",       # 亚伦 - 男声
-    "brian",       # 布莱恩 - 男声
-    "daniel",      # 丹尼尔 - 男声
-    "edward",      # 爱德华 - 男声
+    "tongtong",    # 彤彤 - 女声（默认）
+    "xiaochen",    # 小陈 - 女声
+    "chuichui",    # 锤锤 - 女声
+    "jam",         # jam - 女声
+    "kazi",        # kazi - 女声
+    "douji",       # douji - 女声
+    "luodo",       # luodo - 女声
 ]
 
 # TTS Audio Formats
@@ -111,12 +125,12 @@ CONF_TTS_ENCODE_FORMAT: Final = "tts_encode_format"
 CONF_TTS_STREAM: Final = "tts_stream"
 
 # TTS Default Parameters
-TTS_DEFAULT_VOICE: Final = "yongxi"  # 默认使用勇熙女声
+TTS_DEFAULT_VOICE: Final = "tongtong"  # 默认使用彤彤女声
 TTS_DEFAULT_RESPONSE_FORMAT: Final = "pcm"
 TTS_DEFAULT_ENCODE_FORMAT: Final = "base64"
 TTS_DEFAULT_SPEED: Final = 1.0
 TTS_DEFAULT_VOLUME: Final = 1.0
-TTS_DEFAULT_STREAM: Final = False
+TTS_DEFAULT_STREAM: Final = True
 
 # TTS Parameter Ranges
 TTS_SPEED_MIN: Final = 0.25
@@ -137,7 +151,7 @@ CONF_STT_STREAM: Final = "stt_stream"
 
 # STT Default Parameters
 STT_DEFAULT_TEMPERATURE: Final = 0.95
-STT_DEFAULT_STREAM: Final = False
+STT_DEFAULT_STREAM: Final = True
 
 # STT Parameter Ranges
 STT_TEMPERATURE_MIN: Final = 0.0
@@ -147,7 +161,7 @@ STT_TEMPERATURE_STEP: Final = 0.05
 # STT Audio Formats
 ZHIPUAI_STT_AUDIO_FORMATS: Final = [
     "wav",  # WAV 格式
-    "mp3",  # MP3 格式
+    "ogg",  # OGG 格式
 ]
 
 # STT File Size Limits
@@ -211,7 +225,11 @@ DEFAULT_TITLE: Final = "智谱清言"
 DEFAULT_CONVERSATION_NAME: Final = "智谱对话助手"
 DEFAULT_AI_TASK_NAME: Final = "智谱AI任务"
 DEFAULT_TTS_NAME: Final = "智谱TTS语音"
+DEFAULT_TTS_NAME_EN: Final = "ZhipuAI TTS"
 DEFAULT_STT_NAME: Final = "智谱STT语音"
+DEFAULT_STT_NAME_EN: Final = "ZhipuAI STT"
+DEFAULT_CONVERSATION_NAME_EN: Final = "ZhipuAI Assistant"
+DEFAULT_AI_TASK_NAME_EN: Final = "ZhipuAI Task"
 
 # Services
 SERVICE_GENERATE_IMAGE: Final = "generate_image"

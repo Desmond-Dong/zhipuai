@@ -94,20 +94,18 @@ class ZhipuaiTextToSpeechEntity(TextToSpeechEntity, ZhipuAIEntityBase):
 
     # 支持的语音
     _supported_voices = [
-        Voice("yongxi", "勇熙"),
-        Voice("xiuyi", "叙怡"),
-        Voice("catherine", "凯瑟琳"),
-        Voice("emma", "艾玛"),
-        Voice("aaron", "亚伦"),
-        Voice("brian", "布莱恩"),
-        Voice("daniel", "丹尼尔"),
-        Voice("edward", "爱德华"),
+        Voice("tongtong", "彤彤"),
+        Voice("xiaochen", "小陈"),
+        Voice("chuichui", "锤锤"),
+        Voice("jam", "jam"),
+        Voice("kazi", "kazi"),
+        Voice("douji", "douji"),
+        Voice("luodo", "luodo"),
     ]
 
     def __init__(self, config_entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize the TTS entity."""
         super().__init__(config_entry, subentry, RECOMMENDED_TTS_MODEL)
-        self._api_key = config_entry.data[CONF_API_KEY]
 
     @callback
     def async_get_supported_voices(self, language: str) -> list[Voice]:

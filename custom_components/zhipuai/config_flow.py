@@ -181,6 +181,18 @@ class ZhipuAIConfigFlow(ConfigFlow, domain=DOMAIN):
                         "title": DEFAULT_AI_TASK_NAME,
                         "unique_id": None,
                     },
+                    {
+                        "subentry_type": "tts",
+                        "data": RECOMMENDED_TTS_OPTIONS,
+                        "title": DEFAULT_TTS_NAME,
+                        "unique_id": None,
+                    },
+                    {
+                        "subentry_type": "stt",
+                        "data": RECOMMENDED_STT_OPTIONS,
+                        "title": DEFAULT_STT_NAME,
+                        "unique_id": None,
+                    },
                 ],
             )
 

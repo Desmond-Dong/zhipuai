@@ -43,6 +43,7 @@ from .const import (
     WEB_SEARCH_TOOL,
     ZHIPUAI_CHAT_URL,
 )
+from .markdown_filter import filter_markdown_content
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -525,7 +526,9 @@ class ZhipuAIBaseLLMEntity(Entity):
 
                     # Handle content delta
                     if "content" in delta and delta["content"]:
-                        yield {"content": delta["content"]}
+                        # Filter markdown from content
+                        filtered_content = filter_markdown_content(delta["content"])
+                        yield {"content": filtered_content}
 
                     # Handle tool calls
                     if "tool_calls" in delta:

@@ -16,15 +16,20 @@ from types import MappingProxyType
 
 from .const import (
     DEFAULT_AI_TASK_NAME,
+    DEFAULT_AI_TASK_NAME_EN,
     DEFAULT_CONVERSATION_NAME,
+    DEFAULT_CONVERSATION_NAME_EN,
     DEFAULT_TTS_NAME,
+    DEFAULT_TTS_NAME_EN,
     DEFAULT_STT_NAME,
+    DEFAULT_STT_NAME_EN,
     DOMAIN,
     RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CONVERSATION_OPTIONS,
     RECOMMENDED_TTS_OPTIONS,
     RECOMMENDED_STT_OPTIONS,
     ZHIPUAI_CHAT_URL,
+    get_localized_name,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,30 +81,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZhipuAIConfigEntry) -> b
 
     # Forward setup to platforms first
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Add TTS subentry if it doesn't exist (after platforms are set up)
-    if not any(subentry.subentry_type == "tts" for subentry in entry.subentries.values()):
-        hass.config_entries.async_add_subentry(
-            entry,
-            ConfigSubentry(
-                data=MappingProxyType(RECOMMENDED_TTS_OPTIONS),
-                subentry_type="tts",
-                title=DEFAULT_TTS_NAME,
-                unique_id=None,
-            ),
-        )
-
-    # Add STT subentry if it doesn't exist (after platforms are set up)
-    if not any(subentry.subentry_type == "stt" for subentry in entry.subentries.values()):
-        hass.config_entries.async_add_subentry(
-            entry,
-            ConfigSubentry(
-                data=MappingProxyType(RECOMMENDED_STT_OPTIONS),
-                subentry_type="stt",
-                title=DEFAULT_STT_NAME,
-                unique_id=None,
-            ),
-        )
 
     # Set up intent handlers
     from .intents import async_setup_intents

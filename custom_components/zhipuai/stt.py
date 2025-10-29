@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterable, Mapping
 from typing import Any
 
 import aiohttp
@@ -65,7 +65,6 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
     def __init__(self, config_entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize the STT entity."""
         super().__init__(config_entry, subentry, RECOMMENDED_STT_MODEL)
-        self._api_key = config_entry.data[CONF_API_KEY]
 
     
     @property
@@ -76,7 +75,7 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
     @property
     def supported_formats(self) -> list[stt.AudioFormats]:
         """Return a list of supported audio formats."""
-        return [stt.AudioFormats.WAV, stt.AudioFormats.MP3]
+        return [stt.AudioFormats.WAV, stt.AudioFormats.OGG]
 
     @property
     def supported_codecs(self) -> list[stt.AudioCodecs]:
@@ -93,6 +92,11 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
         """Return a list of supported sample rates."""
         return [stt.AudioSampleRates.SAMPLERATE_16000]
 
+    @property
+    def supported_channels(self) -> list[stt.AudioChannels]:
+        """Return a list of supported channels."""
+        return [stt.AudioChannels.CHANNEL_MONO]
+
     @cached_property
     def default_options(self) -> Mapping[str, Any]:
         """Return a mapping with the default options."""
@@ -102,44 +106,58 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
             "stream": STT_DEFAULT_STREAM,
         }
 
-    async def async_process_audio(
-        self, audio_data: bytes, metadata: dict[str, Any]
-    ) -> str:
-        """Process the audio data and return the transcribed text."""
-        if not audio_data:
-            raise ValueError("音频数据不能为空")
-
+    async def async_process_audio_stream(
+        self, metadata: stt.SpeechMetadata, stream: AsyncIterable[bytes]
+    ) -> stt.SpeechResult:
+        """Process an audio stream and return the transcribed text."""
         # 获取配置选项
-        options = self.options
+        options = self.subentry.data
         model = options.get("model", RECOMMENDED_STT_MODEL)
         temperature = float(options.get("temperature", STT_DEFAULT_TEMPERATURE))
-        stream = options.get("stream", STT_DEFAULT_STREAM)
+        stream_response = options.get("stream", STT_DEFAULT_STREAM)
 
         # 验证参数
         if model not in ZHIPUAI_STT_MODELS:
-            raise ValueError(f"不支持的模型: {model}")
+            return stt.SpeechResult(
+                "",
+                stt.SpeechResultState.ERROR
+            )
 
         if not STT_TEMPERATURE_MIN <= temperature <= STT_TEMPERATURE_MAX:
-            raise ValueError(f"温度参数必须在 {STT_TEMPERATURE_MIN} 到 {STT_TEMPERATURE_MAX} 之间")
-
-        # 构建请求
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-        }
-
-        # 准备文件上传
-        form_data = aiohttp.FormData()
-        form_data.add_field(
-            "file",
-            audio_data,
-            filename="audio.wav",
-            content_type="audio/wav"
-        )
-        form_data.add_field("model", model)
-        form_data.add_field("temperature", str(temperature))
-        form_data.add_field("stream", str(stream).lower())
+            return stt.SpeechResult(
+                "",
+                stt.SpeechResultState.ERROR
+            )
 
         try:
+            # 收集音频数据
+            audio_data = b""
+            async for chunk in stream:
+                audio_data += chunk
+
+            if not audio_data:
+                return stt.SpeechResult(
+                    "",
+                    stt.SpeechResultState.ERROR
+                )
+
+            # 构建请求
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+            }
+
+            # 准备文件上传
+            form_data = aiohttp.FormData()
+            form_data.add_field(
+                "file",
+                audio_data,
+                filename="audio.wav",
+                content_type="audio/wav"
+            )
+            form_data.add_field("model", model)
+            form_data.add_field("temperature", str(temperature))
+            form_data.add_field("stream", str(stream_response).lower())
+
             timeout = aiohttp.ClientTimeout(total=DEFAULT_REQUEST_TIMEOUT / 1000)
 
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -155,9 +173,12 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
                             response.status,
                             error_text
                         )
-                        raise ValueError(f"STT API 请求失败: {response.status}")
+                        return stt.SpeechResult(
+                            "",
+                            stt.SpeechResultState.ERROR
+                        )
 
-                    if stream:
+                    if stream_response:
                         # 处理流式响应
                         full_text = ""
                         async for line in response.content:
@@ -174,23 +195,41 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
                                         _LOGGER.warning("解析流式响应失败: %s", exc)
                                         continue
 
-                        return full_text.strip()
+                        return stt.SpeechResult(
+                            full_text.strip(),
+                            stt.SpeechResultState.SUCCESS
+                        )
                     else:
                         # 处理非流式响应
                         response_data = await response.json()
 
                         if "text" not in response_data:
                             _LOGGER.error("STT API 响应格式错误: %s", response_data)
-                            raise ValueError("API 响应格式错误")
+                            return stt.SpeechResult(
+                                "",
+                                stt.SpeechResultState.ERROR
+                            )
 
-                        return response_data["text"]
+                        return stt.SpeechResult(
+                            response_data["text"],
+                            stt.SpeechResultState.SUCCESS
+                        )
 
         except aiohttp.ClientError as exc:
             _LOGGER.error("智谱AI STT 网络请求失败: %s", exc)
-            raise ValueError(f"网络请求失败: {exc}") from exc
+            return stt.SpeechResult(
+                "",
+                stt.SpeechResultState.ERROR
+            )
         except asyncio.TimeoutError as exc:
             _LOGGER.error("智谱AI STT 请求超时: %s", exc)
-            raise ValueError("请求超时") from exc
+            return stt.SpeechResult(
+                "",
+                stt.SpeechResultState.ERROR
+            )
         except Exception as exc:
             _LOGGER.error("智谱AI STT 转录失败: %s", exc, exc_info=True)
-            raise ValueError(f"STT 转录失败: {exc}") from exc
+            return stt.SpeechResult(
+                "",
+                stt.SpeechResultState.ERROR
+            )

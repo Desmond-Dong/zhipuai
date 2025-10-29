@@ -115,7 +115,7 @@
           },
           "data_description": {
             "recommended": "Use recommended settings",
-            "tts_voice": "Select voice: Yongxi, Xiuyi, Catherine, Emma, Aaron, Brian, Daniel, Edward",
+            "tts_voice": "Select voice: Tongtong, Xiaochen, Chuichui, Jam, Kazi, Douji, Luodo",
             "tts_speed": "Speech playback speed, 0.25=very slow, 4.0=very fast",
             "tts_volume": "Speech volume, 0.1=very low, 2.0=very loud",
             "tts_response_format": "Audio file format: pcm or wav",
