@@ -32,6 +32,7 @@ from .const import (
     ZHIPUAI_STT_URL,
 )
 from .entity import ZhipuAIEntityBase
+from .helpers import convert_to_wav
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +76,8 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
     @property
     def supported_formats(self) -> list[stt.AudioFormats]:
         """Return a list of supported audio formats."""
-        return [stt.AudioFormats.WAV, stt.AudioFormats.OGG]
+        # 智谱AI官方只支持WAV格式（MP3格式需要特殊处理）
+        return [stt.AudioFormats.WAV]
 
     @property
     def supported_codecs(self) -> list[stt.AudioCodecs]:
@@ -141,6 +143,27 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
                     stt.SpeechResultState.ERROR
                 )
 
+            # 转换音频为WAV格式（确保兼容性）
+            if metadata.format != stt.AudioFormats.WAV:
+                _LOGGER.info("Converting audio from %s to WAV format", metadata.format.value)
+                try:
+                    mime_type = f"audio/L{metadata.bit_rate.value};rate={metadata.sample_rate.value}"
+                    audio_data = convert_to_wav(audio_data, mime_type)
+                    _LOGGER.info("Successfully converted audio to WAV, new size: %d bytes", len(audio_data))
+                except Exception as exc:
+                    _LOGGER.error("Failed to convert audio to WAV: %s", exc, exc_info=True)
+                    # 如果转换失败，继续使用原始数据
+                    pass
+            else:
+                # 即使是WAV格式，也重新生成标准WAV头部以确保兼容性
+                _LOGGER.info("Re-generating WAV file for compatibility")
+                try:
+                    mime_type = f"audio/L{metadata.bit_rate.value};rate={metadata.sample_rate.value}"
+                    audio_data = convert_to_wav(audio_data, mime_type)
+                    _LOGGER.info("Re-generated WAV file for compatibility, new size: %d bytes", len(audio_data))
+                except Exception as exc:
+                    _LOGGER.error("Failed to re-generate WAV file: %s", exc, exc_info=True)
+
             # 构建请求
             headers = {
                 "Authorization": f"Bearer {self._api_key}",
@@ -184,9 +207,15 @@ class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
                         async for line in response.content:
                             if line:
                                 line_text = line.decode('utf-8').strip()
+
                                 if line_text.startswith('data: '):
                                     try:
                                         data_str = line_text[6:]  # Remove 'data: ' prefix
+
+                                        # 检查是否是结束标记
+                                        if data_str == "[DONE]":
+                                            break
+
                                         data_dict = json.loads(data_str)
 
                                         if "text" in data_dict:

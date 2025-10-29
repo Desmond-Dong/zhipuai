@@ -160,8 +160,9 @@ STT_TEMPERATURE_STEP: Final = 0.05
 
 # STT Audio Formats
 ZHIPUAI_STT_AUDIO_FORMATS: Final = [
-    "wav",  # WAV 格式
-    "ogg",  # OGG 格式
+    "wav",  # WAV 格式 (智谱AI官方支持)
+    # 注意：虽然官方支持MP3，但Home Assistant的STT组件对MP3处理比较复杂
+    # 建议使用WAV格式以获得最佳兼容性
 ]
 
 # STT File Size Limits
