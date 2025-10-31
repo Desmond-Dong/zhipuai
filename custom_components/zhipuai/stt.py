@@ -56,6 +56,7 @@ async def async_setup_entry(
 class ZhipuaiSpeechToTextEntity(SpeechToTextEntity, ZhipuAIEntityBase):
     """智谱 AI speech-to-text entity."""
 
+    _attr_has_entity_name = False
     _attr_supported_options = [
         "model",
         "temperature",

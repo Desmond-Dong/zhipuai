@@ -75,6 +75,7 @@ async def async_setup_entry(
 class ZhipuaiTextToSpeechEntity(TextToSpeechEntity, ZhipuAIEntityBase):
     """智谱 AI text-to-speech entity."""
 
+    _attr_has_entity_name = False
     _attr_supported_options = [
         ATTR_VOICE,
         "speed",

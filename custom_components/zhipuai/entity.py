@@ -51,7 +51,7 @@ _LOGGER = logging.getLogger(__name__)
 class ZhipuAIBaseLLMEntity(Entity):
     """Base entity for 智谱清言 LLM."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
     _attr_should_poll = False
 
     def __init__(
@@ -724,7 +724,7 @@ class ZhipuAIBaseLLMEntity(Entity):
 class ZhipuAIEntityBase(Entity):
     """Base entity for 智谱清言 integration."""
 
-    _attr_has_entity_name = True
+    _attr_has_entity_name = False
     _attr_should_poll = False
 
     def __init__(
