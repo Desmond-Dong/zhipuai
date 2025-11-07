@@ -1,21 +1,82 @@
 name: Release
 
 on:
+  push:
+    paths:
+      - 'custom_components/zhipuai/manifest.json'
   release:
     types: [published]
 
 jobs:
-  release-zip:
+  release:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    permissions:
+      contents: write
 
-      - name: zip custom component
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from manifest
+        id: extract_version
+        if: github.event_name == 'push'
+        run: |
+          version=$(jq -r '.version' custom_components/zhipuai/manifest.json)
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version_number=${version#v}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        if: github.event_name == 'push'
+        run: |
+          version="${{ steps.extract_version.outputs.version }}"
+          if git rev-parse "$version" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag $version already exists, skipping release"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag $version does not exist, will create release"
+          fi
+
+      - name: Create tag and release
+        if: github.event_name == 'push' && steps.check_tag.outputs.exists == 'false'
+        run: |
+          version="${{ steps.extract_version.outputs.version }}"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "$version" -m "Release $version"
+          git push origin "$version"
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && steps.check_tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.extract_version.outputs.version }}
+          name: Release ${{ steps.extract_version.outputs.version }}
+          body: |
+            Auto-release for version ${{ steps.extract_version.outputs.version }}
+
+            Changes triggered by manifest.json update.
+          draft: false
+          prerelease: false
+
+      - name: Create zip file
         run: |
           cd ${{ github.workspace }}/custom_components/zhipuai
           zip -r zhipuai.zip ./
 
-      - name: upload release asset
+      - name: Upload release asset
+        if: github.event_name == 'push' && steps.check_tag.outputs.exists == 'false'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ github.workspace }}/custom_components/zhipuai/zhipuai.zip
+          asset_name: zhipuai.zip
+          tag: ${{ steps.extract_version.outputs.version }}
+          overwrite: true
+
+      - name: Upload release asset to existing release
+        if: github.event_name == 'release'
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
