@@ -132,6 +132,16 @@ class ZhipuAIBaseLLMEntity(Entity):
         # Build messages from chat log (attachment processing will be done during conversion)
         messages = await self._async_convert_chat_log_to_messages(chat_log)
 
+        # Add JSON format instruction to system message if structure is requested
+        if structure and messages:
+            for i, message in enumerate(messages):
+                if message.get("role") == "system":
+                    # Add JSON format requirement to system message
+                    original_content = message.get("content", "")
+                    if "JSON" not in original_content:
+                        message["content"] = original_content + "\n\nWhen providing structured data like automation names/descriptions, respond ONLY with valid JSON. Use the exact JSON structure requested in the prompt. Do not include any markdown formatting, explanations, or additional text."
+                    break
+
         # Add tools if available
         tools = []
         if chat_log.llm_api:

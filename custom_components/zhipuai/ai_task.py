@@ -136,7 +136,23 @@ class ZhipuAITaskEntity(
         # If structure is requested, parse as JSON
         if task.structure:
             try:
-                data = json_loads(text)
+                # Clean up the response to extract pure JSON
+                cleaned_text = text.strip()
+
+                # Remove common prefixes that might appear before JSON
+                if cleaned_text.startswith('json'):
+                    cleaned_text = cleaned_text[4:].strip()
+                elif cleaned_text.startswith('JSON'):
+                    cleaned_text = cleaned_text[4:].strip()
+
+                # Remove markdown code blocks if present
+                if cleaned_text.startswith('```'):
+                    lines = cleaned_text.split('\n')
+                    if len(lines) > 1:
+                        # Remove first line (```json) and last line (```)
+                        cleaned_text = '\n'.join(lines[1:-1]).strip()
+
+                data = json_loads(cleaned_text)
             except JSONDecodeError as err:
                 _LOGGER.error(
                     "Failed to parse JSON response: %s. Response: %s",
