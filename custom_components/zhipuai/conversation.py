@@ -13,7 +13,6 @@ from homeassistant.helpers import intent
 
 from .const import CONF_LLM_HASS_API, CONF_PROMPT, DOMAIN
 from .entity import ZhipuAIBaseLLMEntity
-from .intents import extract_intent_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,17 +81,6 @@ class ZhipuAIConversationEntity(
         """Process a sentence and return a response."""
         options = self.subentry.data
 
-        # 首先尝试进行意图识别
-        try:
-            intent_info = extract_intent_info(user_input.text, self.hass)
-            if intent_info:
-                _LOGGER.debug("Detected intent: %s", intent_info)
-                result = await self._handle_intent(intent_info, user_input)
-                if result:
-                    return result
-        except Exception as e:
-            _LOGGER.debug("Intent detection failed: %s", e)
-
         # 检查是否是自动化创建请求
         try:
             automation_result = await self._handle_automation_request(user_input)
@@ -124,55 +112,7 @@ class ZhipuAIConversationEntity(
         # Return result from chat log
         return conversation.async_get_result_from_chat_log(user_input, chat_log)
 
-    async def _handle_intent(
-        self,
-        intent_info: dict,
-        user_input: conversation.ConversationInput
-    ) -> conversation.ConversationResult:
-        """Handle recognized intent."""
-        try:
-            from .intents import get_intent_handler
-            intent_handler = get_intent_handler(self.hass)
-
-            # 处理意图
-            result = await intent_handler.handle_intent(intent_info)
-
-            if result.get("success", False):
-                # 创建成功的响应
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_speech(result.get("message", "操作完成"))
-
-                return conversation.ConversationResult(
-                    response=intent_response,
-                    conversation_id=user_input.conversation_id
-                )
-            else:
-                # 创建错误响应
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    result.get("message", "操作失败")
-                )
-
-                return conversation.ConversationResult(
-                    response=intent_response,
-                    conversation_id=user_input.conversation_id
-                )
-
-        except Exception as e:
-            _LOGGER.error("Error handling intent: %s", e)
-            # 返回错误响应
-            intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_error(
-                intent.IntentResponseErrorCode.UNKNOWN,
-                f"意图处理失败: {str(e)}"
-            )
-
-            return conversation.ConversationResult(
-                response=intent_response,
-                conversation_id=user_input.conversation_id
-            )
-
+  
     async def _handle_automation_request(
         self,
         user_input: conversation.ConversationInput

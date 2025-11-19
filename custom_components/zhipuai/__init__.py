@@ -82,10 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ZhipuAIConfigEntry) -> b
     # Forward setup to platforms first
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Set up intent handlers
-    from .intents import async_setup_intents
-    await async_setup_intents(hass)
-
+    
     # Set up AI automation services
     from .ai_automation import async_setup_ai_automation
     await async_setup_ai_automation(hass)

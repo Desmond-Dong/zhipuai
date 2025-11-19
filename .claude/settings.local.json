@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(gh release list:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "Bash(rm:*)",
+      "Bash(python -m py_compile:*)"
     ],
     "deny": [],
     "ask": []
