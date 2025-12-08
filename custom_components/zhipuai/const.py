@@ -77,7 +77,7 @@ RECOMMENDED_AI_TASK_TOP_P: Final = 0.7
 RECOMMENDED_AI_TASK_MAX_TOKENS: Final = 2000
 
 # Image Analysis
-RECOMMENDED_IMAGE_ANALYSIS_MODEL: Final = "glm-4v-flash"
+RECOMMENDED_IMAGE_ANALYSIS_MODEL: Final = "glm-4.6v-flash"
 
 # Image Generation
 RECOMMENDED_IMAGE_MODEL: Final = "cogview-3-flash"
