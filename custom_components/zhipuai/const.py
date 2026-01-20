@@ -63,7 +63,7 @@ CONF_WEB_SEARCH: Final = "web_search"
 CONF_MAX_HISTORY_MESSAGES: Final = "max_history_messages"
 
 # Recommended Values for Conversation
-RECOMMENDED_CHAT_MODEL: Final = "GLM-4-Flash-250414"
+RECOMMENDED_CHAT_MODEL: Final = "glm-4.7-flash"
 RECOMMENDED_TEMPERATURE: Final = 0.3
 RECOMMENDED_TOP_P: Final = 0.5
 RECOMMENDED_TOP_K: Final = 1
@@ -180,6 +180,7 @@ IMAGE_SIZES: Final = [
 
 # Available Models
 ZHIPUAI_CHAT_MODELS: Final = [
+    "glm-4.7-flash",        # GLM-4.7-Flash - 最新免费通用模型（推荐）
     "GLM-4-Flash",          # GLM-4-Flash - 免费通用，128K/16K，免费
     "glm-4.5-flash",        # GLM-4.5-Flash - 免费通用模型，128K/16K，免费使用，解码速度20-25tokens/秒
     "GLM-4-Flash-250414",   # GLM-4-Flash-250414 - 免费通用，128K/16K，免费
@@ -211,14 +212,16 @@ ZHIPUAI_IMAGE_MODELS: Final = [
     "cogview-3-flash",      # CogView-3 Flash (免费)
     "cogview-3-plus",       # CogView-3 Plus
     "cogview-3",            # CogView-3
-
+    "cogView-4-250304",     # CogView-4-250304 - 新版图像生成模型
+    "glm-image",            # GLM-Image - 图像生成模型
 ]
 
 # Vision Models (支持图像分析) - 优先使用免费模型
 VISION_MODELS: Final = [
     "glm-4v-flash",      # GLM-4V-Flash - 免费视觉模型（推荐）
     "glm-4v",            # GLM-4V - 收费视觉模型
-    "glm-4v-plus",        # GLM-4V-Plus - 收费视觉模型
+    "glm-4v-plus",       # GLM-4V-Plus - 收费视觉模型
+    "glm-4.6v",          # GLM-4.6V - 视觉模型
 ]
 
 # Default Names
