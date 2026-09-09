@@ -38,6 +38,7 @@ from .const import (
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_STT_MODEL,
     RECOMMENDED_TEMPERATURE,
+    RECOMMENDED_TTS_MODEL,
     SERVICE_ANALYZE_IMAGE,
     SERVICE_GENERATE_IMAGE,
     SERVICE_TTS_SPEECH,
@@ -303,7 +304,7 @@ async def async_setup_services(hass: HomeAssistant, config_entry) -> None:
             }
 
             payload = {
-                "model": "cogtts",
+                "model": RECOMMENDED_TTS_MODEL,
                 "input": text,
                 "voice": voice,
                 "response_format": response_format,

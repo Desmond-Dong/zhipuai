@@ -83,15 +83,17 @@ RECOMMENDED_IMAGE_ANALYSIS_MODEL: Final = "glm-4.6v-flash"
 RECOMMENDED_IMAGE_MODEL: Final = "cogview-3-flash"
 
 # TTS Configuration
-RECOMMENDED_TTS_MODEL: Final = "cogtts"
+RECOMMENDED_TTS_MODEL: Final = "glm-tts"
 ZHIPUAI_TTS_MODELS: Final = [
-    "cogtts",  # 智谱 TTS 模型
+    "glm-tts",  # GLM-TTS - 新一代语音合成模型（推荐）
+    "cogtts",   # CogTTS - 旧版 TTS 模型
 ]
 
 # STT Configuration
-RECOMMENDED_STT_MODEL: Final = "glm-asr"
+RECOMMENDED_STT_MODEL: Final = "glm-asr-2512"
 ZHIPUAI_STT_MODELS: Final = [
-    "glm-asr",  # 智谱 STT 模型
+    "glm-asr-2512",  # GLM-ASR-2512 - 新一代高精度语音识别模型（推荐）
+    "glm-asr",       # GLM-ASR - 旧版语音识别模型
 ]
 
 # TTS Voice Options
@@ -178,50 +180,43 @@ IMAGE_SIZES: Final = [
     "720x1440",
 ]
 
-# Available Models
+# Available Models (based on https://docs.bigmodel.cn/cn/guide/start/model-overview)
 ZHIPUAI_CHAT_MODELS: Final = [
-    "glm-4.7-flash",        # GLM-4.7-Flash - 最新免费通用模型（推荐）
-    "GLM-4-Flash",          # GLM-4-Flash - 免费通用，128K/16K，免费
-    "glm-4.5-flash",        # GLM-4.5-Flash - 免费通用模型，128K/16K，免费使用，解码速度20-25tokens/秒
-    "GLM-4-Flash-250414",   # GLM-4-Flash-250414 - 免费通用，128K/16K，免费
-    "GLM-Z1-Flash",         # GLM-Z1-Flash - 免费推理，128K/32K，免费
-    "GLM-4-FlashX-250414",  # GLM-4-FlashX-250414 - 高速低价，128K/4K，0.1元/百万tokens，支持0.05元优惠价
-    "GLM-4-Long",           # GLM-4-Long - 超长输入，1M/4K，1元/百万tokens，批量调用0.5元/ 百万Tokens
-    "GLM-4-Air",            # GLM-4-Air - 高性价比，128K/16K，0.5元/百万tokens，支持0.25元优惠价
-    "GLM-4-Air-250414",     # GLM-4-Air-250414 - 高性价比，128K/16K，0.5元/百万tokens，支持0.25元优惠价
-    "GLM-4-AirX",           # GLM-4-AirX - 极速推理，8K/4K，10元/百万tokens
-    "GLM-Z1-Air",           # GLM-Z1-Air - 轻量推理，128K/32K，0.5元/百万tokens
-    "GLM-Z1-AirX",          # GLM-Z1-AirX - 极速推理，32K/30K，5元/百万tokens
-    "GLM-Z1-FlashX-250414", # GLM-Z1-FlashX-250414 - 低价推理，128K/32K，0.5元/百万tokens
-    "glm-4.5",              # GLM-4.5 - 通用最强大模型，输入长度[0,32]/输出[0,0.2]：1元，输出[0.2+]：1.5元，长文本[32,128]：2元，解码速度30-50tokens/秒
-    "glm-4.5-x",            # GLM-4.5-X - 高性能大模型，输入长度[0,32]/输出[0,0.2]：4元，输出[0.2+]：6元，长文本[32,128]：8元，解码速度60-100tokens/秒
-    "glm-4.5-air",          # GLM-4.5-Air - 轻量级模型，输入长度[0,32]/输出[0,0.2]：0.4元，输出[0.2+]：0.4元，长文本[32,128]：0.6元，解码速度30-50tokens/秒
-    "glm-4.5-airx",         # GLM-4.5-AirX - 快速推理模型，输入长度[0,32]/输出[0,0.2]：2元，输出[0.2+]：2元，长文本[32,128]：4元，解码速度60-100tokens/秒
-    "GLM-4-Plus",           # GLM-4-Plus - 旧智能旗舰，128K/4K，5元/百万tokens，批量2.5元/ 百万Tokens
-    "GLM-4-0520",           # GLM-4-0520 - 稳定版本，128K/4K，100元/百万tokens
-    "GLM-4-AllTools",       # GLM-4-AllTools - 全能工具，128K/32K，1元/百万tokens
-    "GLM-4-Assistant",      # GLM-4-Assistant - 全智能体，128K/4K，5元/百万tokens
-    "GLM-4-CodeGeex-4",     # GLM-4-CodeGeex - 代码生成，128K/32K，0.1元/百万Tokens
-    "GLM-4V-Flash",         # GLM-4V-Flash - （无官方定价说明，支持多模态/图像处理）
-    "GLM-4V-Plus",          # GLM-4V-Plus - （无官方定价说明，支持多模态/图像处理）
-    "CharGLM-4",            # CharGLM-4 - 拟人对话，8K/4K，1元/百万tokens
-    "glm-zero-preview",     # glm-zero-preview - （无官方定价说明/暂未公开）
+    # 免费文本模型
+    "glm-4.7-flash",        # GLM-4.7-Flash - 免费文本模型，200K上下文（推荐）
+    "glm-4.5-flash",        # GLM-4.5-Flash - 免费文本模型，128K上下文
+    "GLM-4-Flash-250414",   # GLM-4-Flash-250414 - 免费文本模型，128K上下文
+    # 旗舰/最新文本模型
+    "glm-5.3",              # GLM-5.3 - 最新旗舰，1M上下文（始终开启思考）
+    "glm-5.2",              # GLM-5.2 - 旗舰模型，1M上下文
+    "glm-5.1",              # GLM-5.1 - 200K上下文
+    "glm-5",                # GLM-5 - 200K上下文
+    "glm-5-turbo",          # GLM-5-Turbo - 长任务优化，200K上下文
+    "glm-4.7",              # GLM-4.7 - 通用对话/推理/智能体，200K上下文
+    "glm-4.7-flashx",       # GLM-4.7-FlashX - 轻量高速，200K上下文
+    "glm-4.6",              # GLM-4.6 - 高级编码/复杂推理/工具调用，200K上下文
+    "glm-4.5-air",          # GLM-4.5-Air - 轻量模型，128K上下文
+    "glm-4.5-airx",         # GLM-4.5-AirX - 极速版本，128K上下文
+    "GLM-4-Long",           # GLM-4-Long - 超长文本，1M上下文
+    "GLM-4-FlashX-250414",  # GLM-4-FlashX-250414 - 高速版本，128K上下文
+    # 原生多模态模型（支持图片/视频/文件理解）
+    "glm-5.3-flash",        # GLM-5.3-Flash - 原生多模态，1M上下文（始终开启思考）
 ]
 
 ZHIPUAI_IMAGE_MODELS: Final = [
-    "cogview-3-flash",      # CogView-3 Flash (免费)
-    "cogview-3-plus",       # CogView-3 Plus
-    "cogview-3",            # CogView-3
-    "cogView-4-250304",     # CogView-4-250304 - 新版图像生成模型
-    "glm-image",            # GLM-Image - 图像生成模型
+    "cogview-3-flash",      # CogView-3-Flash (免费)
+    "glm-image",            # GLM-Image - 旗舰图像生成模型
+    "cogView-4-250304",     # CogView-4 - 支持汉字生成
 ]
 
 # Vision Models (支持图像分析) - 优先使用免费模型
 VISION_MODELS: Final = [
-    "glm-4v-flash",      # GLM-4V-Flash - 免费视觉模型（推荐）
-    "glm-4v",            # GLM-4V - 收费视觉模型
-    "glm-4v-plus",       # GLM-4V-Plus - 收费视觉模型
-    "glm-4.6v",          # GLM-4.6V - 视觉模型
+    "glm-4.6v-flash",           # GLM-4.6V-Flash - 免费视觉推理模型，128K上下文（推荐）
+    "glm-4.1v-thinking-flash",  # GLM-4.1V-Thinking-Flash - 免费视觉推理模型，64K上下文
+    "glm-4v-flash",             # GLM-4V-Flash - 免费图像理解模型，16K上下文
+    "glm-4.6v",                 # GLM-4.6V - 视觉模型，128K上下文
+    "glm-4.1v-thinking-flashx", # GLM-4.1V-Thinking-FlashX - 高并发视觉推理，64K上下文
+    "glm-5v-turbo",             # GLM-5V-Turbo - 多模态Coding基座，200K上下文
 ]
 
 # Default Names

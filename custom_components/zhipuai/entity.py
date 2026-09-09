@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
-from voluptuous_openapi import convert
+
+try:
+    from probatio import to_openapi
+except ImportError:  # Home Assistant < 2026.9 bundles voluptuous_openapi instead
+    from voluptuous_openapi import convert as to_openapi  # type: ignore[assignment]
 
 from homeassistant.components import conversation, media_source
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
@@ -41,6 +45,7 @@ from .const import (
     RECOMMENDED_TOP_K,
     RECOMMENDED_TOP_P,
     WEB_SEARCH_TOOL,
+    VISION_MODELS,
     ZHIPUAI_CHAT_URL,
 )
 from .markdown_filter import filter_markdown_content, filter_markdown_streaming
@@ -108,7 +113,7 @@ class ZhipuAIBaseLLMEntity(Entity):
 
             # Auto-switch to vision model if needed (prefer free model!)
             if has_media_attachments:
-                vision_models = ["glm-4v-flash", "glm-4v", "glm-4v-plus"]
+                vision_models = VISION_MODELS + ["glm-4v", "glm-4v-plus", "glm-5.3-flash"]
                 if configured_model not in vision_models:
                     final_model = RECOMMENDED_IMAGE_ANALYSIS_MODEL  # GLM-4V-Flash
                     _LOGGER.info("Auto-switching to vision model %s for media attachments (original: %s)", final_model, configured_model)
@@ -470,9 +475,9 @@ class ZhipuAIBaseLLMEntity(Entity):
     ) -> dict[str, Any]:
         """Convert schema to ZhipuAI format."""
         # ZhipuAI uses standard JSON Schema
-        # Use voluptuous_openapi to convert the schema properly
+        # Use probatio (HA >= 2026.9) / voluptuous_openapi to convert the schema properly
         try:
-            return convert(
+            return to_openapi(
                 schema,
                 custom_serializer=custom_serializer if custom_serializer else llm.selector_serializer,
             )
@@ -480,7 +485,7 @@ class ZhipuAIBaseLLMEntity(Entity):
             _LOGGER.warning("Failed to convert schema with custom_serializer: %s", err)
             # Fall back to basic conversion without custom_serializer
             try:
-                return convert(schema, custom_serializer=llm.selector_serializer)
+                return to_openapi(schema, custom_serializer=llm.selector_serializer)
             except Exception:
                 # If all else fails, return as-is
                 return schema

@@ -71,9 +71,10 @@ analyze_image:
         select:
           options:
             - "glm-4.6v-flash"
+            - "glm-4.1v-thinking-flash"
             - "glm-4v-flash"
-            - "glm-4v"
-            - "glm-4v-plus"
+            - "glm-4.6v"
+            - "glm-5v-turbo"
     temperature:
       name: 温度
       description: 控制输出的随机性，值越高输出越随机

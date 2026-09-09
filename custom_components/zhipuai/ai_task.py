@@ -101,7 +101,8 @@ class ZhipuAITaskEntity(
 
         final_model = configured_model
         if has_attachments:
-            vision_models = ["glm-4.6v-flash", "glm-4v-flash", "glm-4v", "glm-4v-plus"]  # Use same priority as entity.py (free model first)
+            # Use same priority as entity.py (free model first)
+            vision_models = VISION_MODELS + ["glm-4v", "glm-4v-plus", "glm-5.3-flash"]
             # Check if attachments contain media files
             has_media_attachments = False
             for content in chat_log.content:
