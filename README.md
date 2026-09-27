@@ -1,8 +1,9 @@
-<h1 align="center">智谱清言 ZhipuAI · Home Assistant 集成</h1>
+<h1 align="center">智谱 ZhipuAI · Home Assistant 集成</h1>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/f8ff7a6c-4449-496a-889a-d205469a84df" alt="ZhipuAI" width="700" height="400" />
 </p>
 
+**基于智谱已经不再提供免费模型，此项目将进入低频更新状态，更建议使用[AI HUB](https://github.com/ha-china/ai_hub)**
 
 <p align="center">
   <a href="https://github.com/Desmond-Dong/zhipuai/releases"><img src="https://img.shields.io/github/v/release/Desmond-Dong/zhipuai" alt="GitHub Version"></a>
